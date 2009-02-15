@@ -46,7 +46,13 @@ class Rule:
         self.left = left
         self.right = right
         self.action = kwarg.get('action', lambda ctx, *args: args)
+        
+    def __eq__(self, other):
+        return (self.left, self.right, self.action) == (other.left, other.right, self.action)
     
+    def __hash__(self):
+        return hash((self.left, self.right, self.action))
+
     def __str__(self):
         """
         >>> print Rule('a', 'b', 'c')
