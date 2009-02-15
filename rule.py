@@ -37,7 +37,7 @@ class Rule:
     
     A custom semantic action is associated in constructor.
     
-    >>> r = Rule('list', 'list', 'item', action=lambda c, l, i: l + [i])
+    >>> r = Rule('list', 'list', 'item', action=lambda self, l, i: l + [i])
     >>> r.action(None, [], 1)
     [1]
     """

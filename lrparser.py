@@ -34,10 +34,11 @@ class Parser:
     
     The method 'parse' will accept an iterable of tokens (which are arbitrary objects)
     and an extraction function. The extraction function should return the terminal symbol
-    associated with the token. By default, the extraction function is an identity. Whenever
-    the parser reduces a word to a non-terminal, an action associated with the reduction rule
-    is executed. This way Abstract Syntax Trees or other objects can be constructed.
-    The parse method returns the result of an action associated with the topmost reduction rule.
+    associated with the token. By default, the extraction function return the object itself
+    or the first first field if it is a tuple. Whenever the parser reduces a word to a non-terminal,
+    an action associated with the reduction rule is executed. This way Abstract Syntax Trees
+    or other objects can be constructed. The parse method returns the result of an action
+    associated with the topmost reduction rule.
     
     Optionally, the 'parse' function will accept a 'context' keyword argument.
     This is passed to an action when reduction occurs. By default, context is None.
@@ -59,7 +60,7 @@ class Parser:
     ParsingError: Unexpected input token: 's'
     """
     
-    def __init__(self, grammar, k, keep_states=False):
+    def __init__(self, grammar, k=1, keep_states=False):
         
         if grammar.root() == None:
             raise InvalidGrammarError('There must be at least one rule in the grammar.')
@@ -159,7 +160,7 @@ class Parser:
         if keep_states:
             self.states = states
 
-    def parse(self, sentence, context=None, extract=lambda x: x):
+    def parse(self, sentence, context=None, extract=lambda arg: arg[0] if type(arg) == tuple else arg, prereduce_visitor=None, postreduce_visitor=None):
         it = iter(sentence)
         buf = []
         while len(buf) < self.k:
@@ -189,18 +190,26 @@ class Parser:
             
             key = (state, tuple(extract(token) for token in buf))
             if key not in self.action:
-                raise ParsingError('Unexpected input token: %s' % repr(key[1]))
+                raise ParsingError('Unexpected input token: %s' % repr(tuple(buf)))
             
             action = self.action[key]
             if action[0] == 'reduce':
                 rule = action[1]
                 
                 if len(rule.right) > 0:
+                    if prereduce_visitor:
+                        prereduce_visitor(*asts[-len(rule.right):])
                     new_ast = rule.action(context, *asts[-len(rule.right):])
+                    if postreduce_visitor:
+                        postreduce_visitor(rule, new_ast)
                     del states[-len(rule.right):]
                     del asts[-len(rule.right):]
                 else:
+                    if prereduce_visitor:
+                        prereduce_visitor()
                     new_ast = rule.action(context)
+                    if postreduce_visitor:
+                        postreduce_visitor(rule, new_ast)
                 
                 states.append(self.goto[states[-1], rule.left])
                 asts.append(new_ast)
