@@ -5,7 +5,9 @@ from first import First
 
 class InvalidGrammarError(BaseException):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
-    pass
+    def __init__(self, message, states=None):
+        BaseException.__init__(self, message)
+        self.states = states
 
 class ParsingError(BaseException):
     """Raised by a parser if the input word is not a sentence of the grammar."""
@@ -135,7 +137,7 @@ class Parser:
         def add_action(state_id, lookahead, action, item):
             key = (state_id, lookahead)
             if key in action_table and action_table[key] != action:
-                raise InvalidGrammarError('LR(%i) table conflict at %s: actions %s, %s trying to add %s' % (k, key, action_table[key], action, item))
+                raise InvalidGrammarError('LR(%i) table conflict at %s: actions %s, %s trying to add %s' % (k, key, action_table[key], action, item), states)
             action_table[key] = action
         
         for state_id, state in enumerate(states):
