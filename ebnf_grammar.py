@@ -8,10 +8,10 @@ and returns the list of corresponding Rule objects.
 >>> grammar_in_ebnf = 'list = { item }; item = "i";'
 >>> for rule in ebnf_parse(grammar_in_ebnf):
 ...     print rule
-list ::= @2
-@2 ::= <empty>
-@2 ::= @2 @1
-@1 ::= item
+list ::= @1
+@1 ::= <empty>
+@1 ::= @1 @2
+@2 ::= item
 item ::= i
 
 The helper function 'parse_from_ebnf' uses 'ebnf_parse'
@@ -40,7 +40,7 @@ For a list of alternatives 'X = a_1 | a_2;', the value of 'X' is
 that of the alternative.
 
 >>> parse_from_ebnf('a', 'root = "a" | "b";')
-('a',)
+'a'
 
 For a sequential composition 'X = a_1, a_2;'
 the value of 'X' is a tuple of values of subexpressions. Literals quoted
@@ -50,9 +50,9 @@ from the tuple.
 >>> parse_from_ebnf('ab', 'root = "a", "b" | "c";')
 ('a', 'b')
 >>> parse_from_ebnf('ab', '''root = "a", 'b' | "c";''')
-('a',)
+'a'
 >>> parse_from_ebnf('c', 'root = "a", "b" | "c";')
-('c',)
+'c'
 
 Optional subexpressions have the value of the nested subexpression
 or None if it's missing. 
@@ -73,15 +73,18 @@ The grouping has the same value as the subexpression,
 except when the value is a one-tuple. In that case, is is unboxed.
 
 >>> parse_from_ebnf('a', 'root = {("a")};')
-(['a'],)
+['a']
 >>> parse_from_ebnf('ab', 'root = {("a", "b")};')
-([('a', 'b')],)
+[('a', 'b')]
 
 The optional argument 'action' is called after each ebnf reduction
 to tranform the value of the corresponding nonterminal.
 
 >>> parse_from_ebnf('aaa', 'root = { "a" };', action=lambda self, list: '.'.join(list))
 'a.a.a'
+
+>>> parse_from_ebnf(['id', 'id', 'nb', 'id'], 'quickbook = block, { _nb, block }; block = { id };')
+(['id', 'id'], [['id']])
 """
 
 from rule import Rule
@@ -90,132 +93,245 @@ from lrparser import Parser
 from simple_lexer import simple_lexer
 
 class _Item:
+    """Represents the right side of a production rule (i.e. a partial rule).
+    
+    An item carries the list of symbols. For each symbol there is
+    a boolean value representing its visibility. The value of
+    an invisible symbol will not be passed as an argument to
+    the associated semantic action.
+    
+    There also is a list of rules on which the partial rule depends.
+    """
     def __init__(self, syms, visibility, rules):
         self.syms = syms
         self.visibility = visibility
         self.rules = rules
-        
+    
     def __repr__(self):
-        return repr((self.syms, self.rules))
-        
-class _ActionFilter:
-    def __init__(self, action, visibilities):
-        self.action = action
-        self.visibilities = visibilities
-        
-    def __call__(self, self2, *args):
-        return self.action(self2, *(arg for j, arg in enumerate(args) if self.visibilities[j]))
+        return repr((self.syms, self.visibility, self.rules))
+    
+    def concat(self, item):
+        self.syms.extend(item.syms)
+        self.visibility.extend(item.visibility)
+        self.rules.extend(item.rules)
+
+def _pretty_forward_args(self, *args):
+    if len(args) == 1:
+        return args[0]
+    return args
 
 class _AltList:
-    def __init__(self, item):
-        self.items = [item.syms]
-        self.visibilities = [item.visibility]
-        self.rules = item.rules
+    """Represents a set of alternative partial rules that are to be
+    completed by a common nonterminal.
+    """
+    def __init__(self, *items):
+        """Constructs an alt-list from a list of _Item objects."""
+        self.items = [item.syms for item in items]
+        self.visibilities = [item.visibility for item in items]
+        self.rules = []
+        for item in items:
+            self.rules.extend(item.rules)
 
     def __repr__(self):
         return repr((self.items, self.visibilities, self.rules))
+        
+    def append(self, item):
+        """Appends an additional partial rule (an _Item object) to the list of alternatives."""
+        self.items.append(item.syms)
+        self.visibilities.append(item.visibility)
+        self.rules.extend(item.rules)
 
-    def make_rules(self, unique, action=lambda self, *args: tuple(args) if len(args) != 1 else args[0]):
-        for i, item in enumerate(self.items):
-            self.rules.append(Rule(unique, *item,
-                action=_ActionFilter(action, self.visibilities[i])))
-        return self.rules
+    def reduce(self, nonterm, visible=True, action=_pretty_forward_args):
+        """Reduces the alt-list to a single item.
+        
+        The 'nonterm' symbol will be used as a left-hand-side symbol for all alternative rules.
+        The alt-list will be reduced to a single partial rule consisting of a visible symbol 'nonterm'.
+        The newly created _Item object objects will be returned.
+        """
+        rules = self.rules
+        for item, visibility in zip(self.items, self.visibilities):
+            rules.append(Rule(nonterm, *item, action=_ActionFilter(action, visibility)))
+        
+        del self.rules
+        del self.items
+        del self.visibilities
+        
+        return _Item([nonterm], [visible], rules)
+
+class _ActionFilter:
+    """A forwarder with argument filtering.
+    
+    The filter carries a list of boolean values representing visibility.
+    An invisible argument is discarded before forwarding.
+    """
+    def __init__(self, action, visibility):
+        """
+        The filter will forward the arguments to the 'action' callable.
+        The corresponding 'visibility' list controls which arguments are forwarded
+        and which are discarded.
+        """
+        self.action = action
+        self.visibility = visibility
+        
+    def __call__(self, context, *args):
+        """Forwards the call, filtering invisible arguments out."""
+        return self.action(context, *(arg for arg, visible in zip(args, self.visibility) if visible))
+
+def _make_empty_list(self):
+    return []
+
+def _make_none(self):
+    return None
 
 def _concat_list(self, list, item):
     list.append(item)
     return list
+    
+def _id(self, item):
+    return item
+    
+def _extract_identifier(self, id_token):
+    return id_token[1]
+    
+def _concat_symbols(self, symbol, id):
+    return ' '.join((symbol, id[1]))
 
-class _Context:
-    def __init__(self, action):
-        self.counter = 0
+class _ParsingContext:
+    """A parsing state of an EBNF syntax parser."""
+
+    def __init__(self, action, counter):
+        self.counter = counter
         self.action = action
     
-    def unique(self):
+    def new_nonterm(self):
         self.counter += 1
         return '@%d' % self.counter
     
     def item_sym(self, sym):
-        return _Item([sym], [True], [])
+        """
+        item ::= symbol
+        
+        The symbol is considered invisible if it starts with an underscore.
+        """
+        if sym[0] == '_':
+            return _Item([sym[1:]], [False], [])
+        else:
+            return _Item([sym], [True], [])
     
     def item_lit(self, quote, lit):
+        """
+        item ::= '\'' ql
+        item ::= '"' ql
+        
+        A quoted literal is visible if it is enclosed in double quotes
+        (as opposed to apostrophes).
+        
+        The 'lit' argument is a terminal token, a tuple ('ql', value).
+        """
         visible = quote == '"'
         return _Item([ch for ch in lit[1]], [visible for ch in lit[1]], [])
-        
+    
     def item_group(self, _1, alt_list, _2):
-        new_sym = self.unique()
-        return _Item([new_sym], [True], alt_list.make_rules(new_sym))
+        """
+        item ::= ( alt_list )
+        """
+        new_nonterm = self.new_nonterm()
+        return alt_list.reduce(new_nonterm, visible=True)
         
     def item_rep(self, _1, alt_list, _2):
-        new_sym = self.unique()
-        rules = alt_list.make_rules(new_sym)
-        rep_sym = self.unique()
-        rules.append(Rule(rep_sym, rep_sym, new_sym, action=_concat_list))
-        rules.append(Rule(rep_sym, action=lambda self: []))
-        return _Item([rep_sym], [True], rules)
+        """
+        item ::= { alt_list }
+        """
+        rep_sym = self.new_nonterm()
+        item = alt_list.reduce(self.new_nonterm(), visible=True)
+        item.rules.append(Rule(rep_sym, rep_sym, item.syms[0], action=_concat_list))
+        item.rules.append(Rule(rep_sym, action=_make_empty_list))
+        return _Item([rep_sym], [True], item.rules)
 
     def item_opt(self, _1, alt_list, _2):
-        new_sym = self.unique()
-        rules = alt_list.make_rules(new_sym)
-        rules.append(Rule(new_sym, action=lambda self: None))
-        return _Item([new_sym], [True], rules)
+        """
+        item ::= [ alt_list ]
+        """
+        item = alt_list.reduce(self.new_nonterm(), visible=True)
+        item.rules.append(Rule(item.syms[0], action=_make_none))
+        return item
 
     def seq_list_concat(self, seq_list, _1, item):
-        seq_list.rules.extend(item.rules)
-        seq_list.visibility.extend(item.visibility)
-        seq_list.syms.extend(item.syms)
+        """
+        seq_list ::= seq_list , item
+        
+        Both seq_list and item are _Item objects.
+        """
+        seq_list.concat(item)
         return seq_list
         
     def new_alt_list(self, seq_list):
+        """
+        alt_list ::= seq_list
+        """
         return _AltList(seq_list)
         
     def append_alt_list(self, alt_list, _1, seq_list):
-        alt_list.rules.extend(seq_list.rules)
-        alt_list.visibilities.append(seq_list.visibility)
-        alt_list.items.append(seq_list.syms)
+        """
+        alt_list ::= alt_list | seq_list
+        """
+        alt_list.append(seq_list)
         return alt_list
         
     def empty_rule(self, sym, _1, _2):
+        """
+        rule ::= sym = ;
+        """
         return [Rule(sym, action=self.action)]
         
     def make_rule(self, sym, _1, alt_list, _2):
-        return alt_list.make_rules(sym, self.action)
+        """
+        rule ::= sym = alt_list ;
+        """
+        item = alt_list.reduce(sym, action=self.action)
+        return item.rules
         
     def append_rule(self, rule_list, rule):
+        """
+        rule_list ::= rule_list rule
+        """
         rule.reverse()
         rule_list.extend(rule)
         return rule_list
 
 _ebnf_grammar = Grammar(
-    Rule('rule_list', action=lambda self: []),
-    Rule('rule_list', 'rule_list', 'rule', action=_Context.append_rule),
+    Rule('rule_list', action=_make_empty_list),
+    Rule('rule_list', 'rule_list', 'rule', action=_ParsingContext.append_rule),
     
-    Rule('rule', 'sym', '=', ';', action=_Context.empty_rule),
-    Rule('rule', 'sym', '=', 'alt_list', ';', action=_Context.make_rule),
+    Rule('rule', 'sym', '=', ';', action=_ParsingContext.empty_rule),
+    Rule('rule', 'sym', '=', 'alt_list', ';', action=_ParsingContext.make_rule),
     
-    Rule('alt_list', 'seq_list', action=_Context.new_alt_list),
-    Rule('alt_list', 'alt_list', '|', 'seq_list', action=_Context.append_alt_list),
+    Rule('alt_list', 'seq_list', action=_ParsingContext.new_alt_list),
+    Rule('alt_list', 'alt_list', '|', 'seq_list', action=_ParsingContext.append_alt_list),
     
-    Rule('seq_list', 'item', action=lambda self, item: item),
-    Rule('seq_list', 'seq_list', ',', 'item', action=_Context.seq_list_concat),
+    Rule('seq_list', 'item', action=_id),
+    Rule('seq_list', 'seq_list', ',', 'item', action=_ParsingContext.seq_list_concat),
     
-    Rule('item', 'sym', action=_Context.item_sym),
-    Rule('item', '\'', 'ql', action=_Context.item_lit),
-    Rule('item', '"', 'ql', action=_Context.item_lit),
-    Rule('item', '(', 'alt_list', ')', action=_Context.item_group),
-    Rule('item', '{', 'alt_list', '}', action=_Context.item_rep),
-    Rule('item', '[', 'alt_list', ']', action=_Context.item_opt),
+    Rule('item', 'sym', action=_ParsingContext.item_sym),
+    Rule('item', '\'', 'ql', action=_ParsingContext.item_lit),
+    Rule('item', '"', 'ql', action=_ParsingContext.item_lit),
+    Rule('item', '(', 'alt_list', ')', action=_ParsingContext.item_group),
+    Rule('item', '{', 'alt_list', '}', action=_ParsingContext.item_rep),
+    Rule('item', '[', 'alt_list', ']', action=_ParsingContext.item_opt),
     
-    Rule('sym', 'id', action=lambda self, id: id[1]),
-    Rule('sym', 'sym', 'id', action=lambda self, sym, id: ' '.join((sym, id[1])))
+    Rule('sym', 'id', action=_extract_identifier),
+    Rule('sym', 'sym', 'id', action=_concat_symbols)
     )
     
 _ebnf_parser = Parser(_ebnf_grammar, k=1)
 
-def ebnf_parse(input, action=lambda self, *args: args):
+def ebnf_parse(input, action=_pretty_forward_args, counter=None):
     """Parses an EBNF grammar and returns a corresponding list of Rule objects."""
-    return _ebnf_parser.parse(simple_lexer(input), context=_Context(action))
+    context = _ParsingContext(action, counter=counter or 0)
+    rules = _ebnf_parser.parse(simple_lexer(input), context=context)
+    return (rules, context.counter) if counter != None else rules
 
-def parse_from_ebnf(input, ebnf, action=lambda self, *args: args):
+def parse_from_ebnf(input, ebnf, action=_pretty_forward_args):
     """Parses an EBNF grammar, creates a parser for it and parses an input with it."""
     return Parser(Grammar(*ebnf_parse(ebnf, action=action))).parse(input)
 
