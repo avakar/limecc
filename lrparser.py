@@ -105,29 +105,24 @@ class Parser:
         itemset = [_Item(aug_grammar[0], 0, ())]
         states = [_close_itemset(itemset)]
         
-        done = False
-        while not done:
-            done = True
+        i = 0
+        while i < len(states):
+            state = states[i]
             
-            i = 0
-            while i < len(states):
-                state = states[i]
-                
-                for symbol in aug_grammar.symbols():
-                    newstate = _goto(state, symbol)
-                    if not newstate.itemset:
-                        continue
-                        
-                    for j, oldstate in enumerate(states):
-                        if newstate.itemset == oldstate.itemset:
-                            state.goto[symbol] = j
-                            break
-                    else:
-                        state.goto[symbol] = len(states)
-                        states.append(newstate)
-                        done = False
-                
-                i += 1
+            for symbol in aug_grammar.symbols():
+                newstate = _goto(state, symbol)
+                if not newstate.itemset:
+                    continue
+                    
+                for j, oldstate in enumerate(states):
+                    if newstate.itemset == oldstate.itemset:
+                        state.goto[symbol] = j
+                        break
+                else:
+                    state.goto[symbol] = len(states)
+                    states.append(newstate)
+            
+            i += 1
         
         accepting_state = None
         
