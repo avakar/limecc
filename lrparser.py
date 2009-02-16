@@ -1,8 +1,6 @@
 from grammar import Grammar, Rule
 from first import First
 
-# TODO: Fix 'shift' and 'reduce' tokens (a bool perhaps?).
-
 class InvalidGrammarError(BaseException):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
     def __init__(self, message, states=None):
@@ -14,7 +12,15 @@ class ParsingError(BaseException):
     pass
     
 class _State:
-    """Represents a single state of a LR(k) parser."""
+    """Represents a single state of a LR(k) parser.
+    
+    There are two tables of interest. The 'goto' table is a dict mapping
+    symbols to state identifiers.
+    
+    The 'action' table maps lookahead strings to actions. An action
+    is either 'None', corresponding to a shift, or a Rule object,
+    corresponding to a reduce.
+    """
     
     def __init__(self, itemset):
         self.itemset = set(itemset)
@@ -128,7 +134,8 @@ class Parser:
         
         def add_action(state, lookahead, action, item):
             if lookahead in state.action and state.action[lookahead] != action:
-                raise InvalidGrammarError('LR(%i) table conflict at %s: actions %s, %s trying to add %s' % (k, lookahead, state.action[lookahead], action, item), states)
+                raise InvalidGrammarError('LR(%i) table conflict at %s: actions %s, %s trying to add %s'
+                    % (k, lookahead, state.action[lookahead], action, item), states)
             state.action[lookahead] = action
         
         for state_id, state in enumerate(states):
@@ -137,12 +144,12 @@ class Parser:
                 if nt == None:
                     if item.rule.left == '':
                         accepting_state = state_id
-                        add_action(state, item.lookahead, ('shift',), item)
+                        add_action(state, item.lookahead, None, item)
                     else:
-                        add_action(state, item.lookahead, ('reduce', item.rule), item)
+                        add_action(state, item.lookahead, item.rule, item)
                 elif aug_grammar.is_terminal(nt):
                     for la in item.lookaheads(first):
-                        add_action(state, la, ('shift',), item)
+                        add_action(state, la, None, item)
         
         assert accepting_state != None
         self.accepting_state = accepting_state
@@ -187,27 +194,25 @@ class Parser:
                 raise ParsingError('Unexpected input token: %s' % repr(tuple(buf)))
             
             action = state.action[key]
-            if action[0] == 'reduce':
-                rule = action[1]
-                
-                if len(rule.right) > 0:
+            if action:   # reduce
+                if len(action.right) > 0:
                     if prereduce_visitor:
-                        prereduce_visitor(*asts[-len(rule.right):])
-                    new_ast = rule.action(context, *asts[-len(rule.right):])
+                        prereduce_visitor(*asts[-len(action.right):])
+                    new_ast = action.action(context, *asts[-len(action.right):])
                     if postreduce_visitor:
-                        postreduce_visitor(rule, new_ast)
-                    del stack[-len(rule.right):]
-                    del asts[-len(rule.right):]
+                        postreduce_visitor(action, new_ast)
+                    del stack[-len(action.right):]
+                    del asts[-len(action.right):]
                 else:
                     if prereduce_visitor:
                         prereduce_visitor()
-                    new_ast = rule.action(context)
+                    new_ast = action.action(context)
                     if postreduce_visitor:
-                        postreduce_visitor(rule, new_ast)
+                        postreduce_visitor(action, new_ast)
                 
-                stack.append(self.states[stack[-1]].goto[rule.left])
+                stack.append(self.states[stack[-1]].goto[action.left])
                 asts.append(new_ast)
-            else: # shift
+            else:   # shift
                 tok = get_shift_token()
                 if tok == None:
                     if state_id == self.accepting_state:
