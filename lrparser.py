@@ -13,6 +13,14 @@ class ParsingError(BaseException):
     """Raised by a parser if the input word is not a sentence of the grammar."""
     pass
     
+class _State:
+    """Represents a single state of a LR(k) parser."""
+    
+    def __init__(self, itemset):
+        self.itemset = set(itemset)
+        self.goto = {}
+        self.action = {}
+
 class Parser:
     """Represents a LR(k) parser.
     
@@ -88,24 +96,14 @@ class Parser:
                             itemset.append(newitem)
                 
                 i += 1
+            return _State(itemset)
                 
-        def _goto(itemset, symbol):
-            res = []
-            for item in itemset:
-                if item.next_token() != symbol:
-                    continue
-                    
-                res.append(_Item(item.rule, item.index + 1, item.lookahead))
-                
-            _close_itemset(res)
-            return set(res)
+        def _goto(state, symbol):
+            res = [_Item(item.rule, item.index + 1, item.lookahead) for item in state.itemset if item.next_token() == symbol]
+            return _close_itemset(res)
         
         itemset = [_Item(aug_grammar[0], 0, ())]
-        _close_itemset(itemset)
-        
-        states = [set(itemset)]
-        
-        goto_table = {}
+        states = [_close_itemset(itemset)]
         
         done = False
         while not done:
@@ -113,54 +111,52 @@ class Parser:
             
             i = 0
             while i < len(states):
-                itemset = states[i]
+                state = states[i]
                 
                 for symbol in aug_grammar.symbols():
-                    newstate = _goto(itemset, symbol)
-                    if len(newstate) == 0:
+                    newstate = _goto(state, symbol)
+                    if not newstate.itemset:
                         continue
                         
-                    for j, state in enumerate(states):
-                        if newstate == state:
-                            goto_table[i, symbol] = j
+                    for j, oldstate in enumerate(states):
+                        if newstate.itemset == oldstate.itemset:
+                            state.goto[symbol] = j
                             break
                     else:
-                        goto_table[i, symbol] = len(states)
+                        state.goto[symbol] = len(states)
                         states.append(newstate)
                         done = False
                 
                 i += 1
         
-        action_table = {}
         accepting_state = None
         
-        def add_action(state_id, lookahead, action, item):
-            key = (state_id, lookahead)
-            if key in action_table and action_table[key] != action:
-                raise InvalidGrammarError('LR(%i) table conflict at %s: actions %s, %s trying to add %s' % (k, key, action_table[key], action, item), states)
-            action_table[key] = action
+        def add_action(state, lookahead, action, item):
+            if lookahead in state.action and state.action[lookahead] != action:
+                raise InvalidGrammarError('LR(%i) table conflict at %s: actions %s, %s trying to add %s' % (k, lookahead, state.action[lookahead], action, item), states)
+            state.action[lookahead] = action
         
         for state_id, state in enumerate(states):
-            for item in state:
+            for item in state.itemset:
                 nt = item.next_token()
                 if nt == None:
                     if item.rule.left == '':
                         accepting_state = state_id
-                        add_action(state_id, item.lookahead, ('shift',), item)
+                        add_action(state, item.lookahead, ('shift',), item)
                     else:
-                        add_action(state_id, item.lookahead, ('reduce', item.rule), item)
+                        add_action(state, item.lookahead, ('reduce', item.rule), item)
                 elif aug_grammar.is_terminal(nt):
                     for la in item.lookaheads(first):
-                        add_action(state_id, la, ('shift',), item)
+                        add_action(state, la, ('shift',), item)
         
         assert accepting_state != None
-        self.goto = goto_table
-        self.action = action_table
         self.accepting_state = accepting_state
+        self.states = states
         self.k = k
         
-        if keep_states:
-            self.states = states
+        if not keep_states:
+            for state in states:
+                del state.itemset
 
     def parse(self, sentence, context=None, extract=lambda arg: arg[0] if type(arg) == tuple else arg, prereduce_visitor=None, postreduce_visitor=None):
         it = iter(sentence)
@@ -185,16 +181,17 @@ class Parser:
                     pass
                 return res
         
-        states = [0]
+        stack = [0]
         asts = []
         while True:
-            state = states[-1]
+            state_id = stack[-1]
+            state = self.states[state_id]
             
-            key = (state, tuple(extract(token) for token in buf))
-            if key not in self.action:
+            key = tuple(extract(token) for token in buf)
+            if key not in state.action:
                 raise ParsingError('Unexpected input token: %s' % repr(tuple(buf)))
             
-            action = self.action[key]
+            action = state.action[key]
             if action[0] == 'reduce':
                 rule = action[1]
                 
@@ -204,7 +201,7 @@ class Parser:
                     new_ast = rule.action(context, *asts[-len(rule.right):])
                     if postreduce_visitor:
                         postreduce_visitor(rule, new_ast)
-                    del states[-len(rule.right):]
+                    del stack[-len(rule.right):]
                     del asts[-len(rule.right):]
                 else:
                     if prereduce_visitor:
@@ -213,22 +210,22 @@ class Parser:
                     if postreduce_visitor:
                         postreduce_visitor(rule, new_ast)
                 
-                states.append(self.goto[states[-1], rule.left])
+                stack.append(self.states[stack[-1]].goto[rule.left])
                 asts.append(new_ast)
             else: # shift
                 tok = get_shift_token()
                 if tok == None:
-                    if state == self.accepting_state:
+                    if state_id == self.accepting_state:
                         assert len(asts) == 1
                         return asts[0]
                     else:
                         raise ParsingError('Reached the end of file prematurely.')
                 
-                key = (state, extract(tok))
-                if key not in self.goto:
-                    raise ParsingError('Unexpected input token: %s' % repr(key[1]))
+                key = extract(tok)
+                if key not in state.goto:
+                    raise ParsingError('Unexpected input token: %s' % repr(key))
                 
-                states.append(self.goto[key])
+                stack.append(state.goto[key])
                 asts.append(tok)
 
 class _Item:
