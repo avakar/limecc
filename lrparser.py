@@ -11,21 +11,10 @@ class ParsingError(BaseException):
     """Raised by a parser if the input word is not a sentence of the grammar."""
     pass
     
-class _State:
-    """Represents a single state of a LR(k) parser.
-    
-    There are two tables of interest. The 'goto' table is a dict mapping
-    symbols to state identifiers.
-    
-    The 'action' table maps lookahead strings to actions. An action
-    is either 'None', corresponding to a shift, or a Rule object,
-    corresponding to a reduce.
-    """
-    
-    def __init__(self, itemset):
-        self.itemset = set(itemset)
-        self.goto = {}
-        self.action = {}
+def _any_matcher(ch):
+    return True
+
+default_matches = { 'any': _any_matcher, 'space': str.isspace, 'digit': str.isdigit, 'alnum': str.isalnum }
 
 class Parser:
     """Represents a LR(k) parser.
@@ -76,7 +65,7 @@ class Parser:
     ParsingError: Unexpected input token: 's'
     """
     
-    def __init__(self, grammar, k=1, keep_states=False):
+    def __init__(self, grammar, k=1, keep_states=False, matches=default_matches):
         
         if grammar.root() == None:
             raise InvalidGrammarError('There must be at least one rule in the grammar.')
@@ -151,6 +140,21 @@ class Parser:
                     for la in item.lookaheads(first):
                         add_action(state, la, None, item)
         
+        # fixup matches
+        for state in states:
+            for lookahead, action in state.action.iteritems():
+                new_lookahead = tuple((matches[symbol] if symbol in matches else _SymbolMatcher(symbol)) for symbol in lookahead)
+                state.action_match.append((new_lookahead, action))
+            del state.action
+            
+            new_goto = {}
+            for symbol, next_state in state.goto.iteritems():
+                if symbol in matches:
+                    state.goto_match.append((matches[symbol], next_state))
+                else:
+                    new_goto[symbol] = next_state
+            state.goto = new_goto
+        
         assert accepting_state != None
         self.accepting_state = accepting_state
         self.states = states
@@ -190,10 +194,7 @@ class Parser:
             state = self.states[state_id]
             
             key = tuple(extract(token) for token in buf)
-            if key not in state.action:
-                raise ParsingError('Unexpected input token: %s' % repr(tuple(buf)))
-            
-            action = state.action[key]
+            action = state.get_action(key)
             if action:   # reduce
                 if len(action.right) > 0:
                     if prereduce_visitor:
@@ -210,7 +211,7 @@ class Parser:
                     if postreduce_visitor:
                         postreduce_visitor(action, new_ast)
                 
-                stack.append(self.states[stack[-1]].goto[action.left])
+                stack.append(self.states[stack[-1]].get_next_state(action.left))
                 asts.append(new_ast)
             else:   # shift
                 tok = get_shift_token()
@@ -222,10 +223,7 @@ class Parser:
                         raise ParsingError('Reached the end of file prematurely.')
                 
                 key = extract(tok)
-                if key not in state.goto:
-                    raise ParsingError('Unexpected input token: %s' % repr(key))
-                
-                stack.append(state.goto[key])
+                stack.append(state.get_next_state(key))
                 asts.append(tok)
 
 class _Item:
@@ -265,6 +263,56 @@ class _Item:
         rule_suffix = self.rule.right[self.index:]
         word = rule_suffix + self.lookahead
         return first(word)
+
+class _SymbolMatcher:
+    def __init__(self, symbol):
+        self.symbol = symbol
+        
+    def __call__(self, symbol):
+        return self.symbol == symbol
+        
+    def __repr__(self):
+        return '<SM %s>' % self.symbol
+
+class _State:
+    """Represents a single state of a LR(k) parser.
+    
+    There are two tables of interest. The 'goto' table is a dict mapping
+    symbols to state identifiers.
+    
+    The 'action' table maps lookahead strings to actions. An action
+    is either 'None', corresponding to a shift, or a Rule object,
+    corresponding to a reduce.
+    """
+    
+    def __init__(self, itemset):
+        self.itemset = set(itemset)
+        self.goto = {}
+        self.action = {}
+        
+        self.action_match = []
+        self.goto_match = []
+
+    def get_action(self, lookahead):
+        for match_list, action in self.action_match:
+            if len(match_list) != len(lookahead):
+                continue
+
+            if all(match(symbol) for match, symbol in zip(match_list, lookahead)):
+                return action
+        
+        raise ParsingError('Unexpected input token: %s' % repr(lookahead))
+
+    def get_next_state(self, symbol):
+        if symbol in self.goto:
+            return self.goto[symbol]
+            
+        for match, next_state in self.goto_match:
+            if match(symbol):
+                return next_state
+        
+        raise ParsingError('Unexpected input token: %s' % repr(symbol))
+        
 
 if __name__ == "__main__":
     import doctest

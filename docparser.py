@@ -3,21 +3,23 @@
 """
 >>> class Test:
 ...     def p_root(self, minus, int_digits, float_digits):
-...         ''' float = ["-"], { "1" }, '.', { "1" }; '''
+...         ''' float = ["-"], { digit }, '.', { digit }; '''
 ...         return (minus, int_digits, float_digits)
 >>> p = DocParser(Test)
 >>> print p.parse('-111.11')
 ('-', ['1', '1', '1'], ['1', '1'])
 >>> print p.parse('111.11')
 (None, ['1', '1', '1'], ['1', '1'])
+>>> print p.parse('128.12')
+(None, ['1', '2', '8'], ['1', '2'])
 """
 
 from ebnf_grammar import ebnf_parse
 from grammar import Grammar
-from lrparser import Parser
+from lrparser import Parser, default_matches
 
 class DocParser:
-    def __init__(self, cls, k=1):
+    def __init__(self, cls, k=1, matches=default_matches):
         rules = []
         root_rules = None
         counter = 0
@@ -40,7 +42,7 @@ class DocParser:
         root_rules.extend(rules)
         root_rules.extend(class_rules)
         self.grammar = Grammar(*root_rules)
-        self.parser = Parser(self.grammar, k)
+        self.parser = Parser(self.grammar, k, matches=matches)
         
     def parse(self, input, context=None):
         return self.parser.parse(input, context=context or self.cls())
