@@ -150,7 +150,7 @@ class _AltList:
         """
         rules = self.rules
         for item, visibility in zip(self.items, self.visibilities):
-            rules.append(Rule(nonterm, *item, action=_ActionFilter(action, visibility)))
+            rules.append(Rule(nonterm, item, action=_ActionFilter(action, visibility)))
         
         del self.rules
         del self.items
@@ -244,7 +244,7 @@ class _ParsingContext:
         """
         rep_sym = self.new_nonterm()
         item = alt_list.reduce(self.new_nonterm(), visible=True)
-        item.rules.append(Rule(rep_sym, rep_sym, item.syms[0], action=_concat_list))
+        item.rules.append(Rule(rep_sym, (rep_sym, item.syms[0]), action=_concat_list))
         item.rules.append(Rule(rep_sym, action=_make_empty_list))
         return _Item([rep_sym], [True], item.rules)
 
@@ -301,26 +301,26 @@ class _ParsingContext:
 
 _ebnf_grammar = Grammar(
     Rule('rule_list', action=_make_empty_list),
-    Rule('rule_list', 'rule_list', 'rule', action=_ParsingContext.append_rule),
+    Rule('rule_list', ('rule_list', 'rule'), action=_ParsingContext.append_rule),
     
-    Rule('rule', 'sym', '=', ';', action=_ParsingContext.empty_rule),
-    Rule('rule', 'sym', '=', 'alt_list', ';', action=_ParsingContext.make_rule),
+    Rule('rule', ('sym', '=', ';'), action=_ParsingContext.empty_rule),
+    Rule('rule', ('sym', '=', 'alt_list', ';'), action=_ParsingContext.make_rule),
     
-    Rule('alt_list', 'seq_list', action=_ParsingContext.new_alt_list),
-    Rule('alt_list', 'alt_list', '|', 'seq_list', action=_ParsingContext.append_alt_list),
+    Rule('alt_list', ('seq_list',),  action=_ParsingContext.new_alt_list),
+    Rule('alt_list', ('alt_list', '|', 'seq_list'), action=_ParsingContext.append_alt_list),
     
-    Rule('seq_list', 'item', action=_id),
-    Rule('seq_list', 'seq_list', ',', 'item', action=_ParsingContext.seq_list_concat),
+    Rule('seq_list', ('item',), action=_id),
+    Rule('seq_list', ('seq_list', ',', 'item'), action=_ParsingContext.seq_list_concat),
     
-    Rule('item', 'sym', action=_ParsingContext.item_sym),
-    Rule('item', '\'', 'ql', action=_ParsingContext.item_lit),
-    Rule('item', '"', 'ql', action=_ParsingContext.item_lit),
-    Rule('item', '(', 'alt_list', ')', action=_ParsingContext.item_group),
-    Rule('item', '{', 'alt_list', '}', action=_ParsingContext.item_rep),
-    Rule('item', '[', 'alt_list', ']', action=_ParsingContext.item_opt),
+    Rule('item', ('sym',), action=_ParsingContext.item_sym),
+    Rule('item', ('\'', 'ql'), action=_ParsingContext.item_lit),
+    Rule('item', ('"', 'ql'), action=_ParsingContext.item_lit),
+    Rule('item', ('(', 'alt_list', ')'), action=_ParsingContext.item_group),
+    Rule('item', ('{', 'alt_list', '}'), action=_ParsingContext.item_rep),
+    Rule('item', ('[', 'alt_list', ']'), action=_ParsingContext.item_opt),
     
-    Rule('sym', 'id', action=_extract_identifier),
-    Rule('sym', 'sym', 'id', action=_concat_symbols)
+    Rule('sym', ('id',), action=_extract_identifier),
+    Rule('sym', ('sym', 'id'), action=_concat_symbols)
     )
     
 _ebnf_parser = Parser(_ebnf_grammar, k=1)

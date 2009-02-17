@@ -38,7 +38,7 @@ def simple_lexer(input, classify=None):
     >>> list(simple_lexer('monty python'))
     [('id', 'monty'), ('id', 'python')]
     >>> list(simple_lexer('  "spam and eggs"  '))
-    [('ql', 'spam and eggs')]
+    ['"', ('ql', 'spam and eggs')]
     """
     
     classify = classify or _Classify()

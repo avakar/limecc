@@ -58,10 +58,10 @@ class First:
     
     The grammar and 'k' parameter are passed during construction.
     
-    >>> g = Grammar(Rule('list'), Rule('list', 'list', 'item'))
+    >>> g = Grammar(Rule('list'), Rule('list', ('list', 'item')))
     >>> f = First(g, k=2)
     >>> f.grammar
-    Grammar(Rule('list'), Rule('list', 'list', 'item'))
+    Grammar(Rule('list'), Rule('list', ('list', 'item')))
     
     The objects are callable and, for a given word 'w', return the set
     { FIRST_k(u) | w =>* u, u terminal }.

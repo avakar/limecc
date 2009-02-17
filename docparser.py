@@ -16,10 +16,10 @@
 
 from ebnf_grammar import ebnf_parse
 from grammar import Grammar
-from lrparser import Parser, default_matches
+from lrparser import Parser, default_matchers
 
 class DocParser:
-    def __init__(self, cls, k=1, matches=default_matches):
+    def __init__(self, cls, k=1, matches=default_matchers):
         rules = []
         root_rules = None
         counter = 0
@@ -42,7 +42,7 @@ class DocParser:
         root_rules.extend(rules)
         root_rules.extend(class_rules)
         self.grammar = Grammar(*root_rules)
-        self.parser = Parser(self.grammar, k, matches=matches)
+        self.parser = Parser(self.grammar, k, matchers=matches)
         
     def parse(self, input, context=None):
         return self.parser.parse(input, context=context or self.cls())

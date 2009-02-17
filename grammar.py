@@ -4,7 +4,7 @@ class Grammar:
     """Represents a set of production rules.
     
     Each rule is encapsulated by an instance of the 'Rule' class.
-    The rules can be added during construction through or later
+    The rules can either be supplied during construction or added later
     using the 'add' and 'extend' methods.
     
     The grammar also tracks the root non-terminal, which is defined
@@ -16,7 +16,7 @@ class Grammar:
     None
 
     >>> g = Grammar(Rule('list'))
-    >>> g.add(Rule('list', 'list', 'item'))
+    >>> g.add(Rule('list', ('list', 'item')))
     >>> print g
     list ::= <empty>
     list ::= list item
@@ -40,7 +40,7 @@ class Grammar:
     A grammar can test a symbol for its terminality. It also exposes a list of
     all non-terminals and a list of all referenced symbols.
     
-    >>> g.add(Rule('root', 'list'))
+    >>> g.add(Rule('root', ('list',)))
     >>> [g.is_terminal(symbol) for symbol in ('list', 'root', 'item', 'unreferenced')]
     [False, False, True, True]
     >>> sorted(list(g.symbols()))
@@ -63,8 +63,7 @@ class Grammar:
         self._nonterms = set()
         self._symbols = set()
         
-        for rule in rules:
-            self.add(rule)
+        self.extend(rules)
         
     def __getitem__(self, key):
         return self._rules[key]
@@ -77,7 +76,7 @@ class Grammar:
         
     def __str__(self):
         """
-        >>> print Grammar(Rule('a', 'b', 'c'), Rule('a', 'c', 'b'))
+        >>> print Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b')))
         a ::= b c
         a ::= c b
         """
@@ -85,8 +84,8 @@ class Grammar:
     
     def __repr__(self):
         """
-        >>> print repr(Grammar(Rule('a', 'b', 'c'), Rule('a', 'c', 'b')))
-        Grammar(Rule('a', 'b', 'c'), Rule('a', 'c', 'b'))
+        >>> print repr(Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b'))))
+        Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b')))
         """
         return 'Grammar(%s)' % ', '.join(repr(rule) for rule in self._rules)
         
@@ -108,7 +107,7 @@ class Grammar:
     def rules(self, left):
         """Retrieves the set of rules with a given non-terminal on the left.
         
-        >>> g = Grammar(Rule('a', 'b'), Rule('b', 'c'), Rule('b', 'd'))
+        >>> g = Grammar(Rule('a', ('b',)), Rule('b', ('c',)), Rule('b', ('d',)))
         >>> for rule in g.rules('a'): print rule
         a ::= b
         >>> for rule in g.rules('c'): print rule
@@ -124,7 +123,7 @@ class Grammar:
         All non-terminal symbols are considered terminal,
         regardless of whether they are referenced by the grammar.
         
-        >>> g = Grammar(Rule('a', 'b'), Rule('b', 'c'))
+        >>> g = Grammar(Rule('a', ('b',)), Rule('b', ('c',)))
         >>> tuple(g.is_terminal(sym) for sym in 'abcd')
         (False, False, True, True)
         """
@@ -144,7 +143,7 @@ class Grammar:
         >>> g = Grammar()
         >>> print g.root()
         None
-        >>> g.add(Rule('a', 'b'))
+        >>> g.add(Rule('a', ('b',)))
         >>> print g.root()
         a
         """
