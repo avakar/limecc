@@ -2,6 +2,7 @@
 
 from grammar import Grammar, Rule
 from first import First
+from matchers import default_matchers
 
 class InvalidGrammarError(BaseException):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
@@ -13,12 +14,6 @@ class ParsingError(BaseException):
     """Raised by a parser if the input word is not a sentence of the grammar."""
     pass
     
-def any_matcher(ch):
-    """Matches any object."""
-    return True
-
-default_matchers = { 'any': any_matcher, 'space': str.isspace, 'digit': str.isdigit, 'alnum': str.isalnum }
-
 def extract_first(token):
     """Returns the argument or, if it is a tuple, its first member.
     
