@@ -6,6 +6,7 @@
 ...         ''' float = ["-"], { digit }, '.', { digit }; '''
 ...         return (minus, int_digits, float_digits)
 >>> p = DocParser(Test)
+>>> p.imbue_matchers()
 >>> print p.parse('-111.11')
 ('-', ['1', '1', '1'], ['1', '1'])
 >>> print p.parse('111.11')
@@ -18,8 +19,8 @@ from ebnf_grammar import ebnf_parse
 from grammar import Grammar
 from lrparser import Parser, default_matchers
 
-class DocParser:
-    def __init__(self, cls, k=1, matches=default_matchers):
+class DocParser(Parser):
+    def __init__(self, cls, k=1):
         rules = []
         root_rules = None
         counter = 0
@@ -38,14 +39,15 @@ class DocParser:
                 new_rules, counter = ebnf_parse(grammar, action, counter=counter)
                 rules.extend(new_rules)
                 
-        self.cls = cls
         root_rules.extend(rules)
         root_rules.extend(class_rules)
-        self.grammar = Grammar(*root_rules)
-        self.parser = Parser(self.grammar, k, matchers=matches)
+        grammar = Grammar(*root_rules)
         
-    def parse(self, input, context=None):
-        return self.parser.parse(input, context=context or self.cls())
+        super(DocParser, self).__init__(grammar, k)
+        self.cls = cls
+    
+    def parse(self, input, context=None, **kwargs):
+        return super(DocParser, self).parse(input, context=context or self.cls(), **kwargs)
 
 if __name__ == '__main__':
     import doctest

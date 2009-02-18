@@ -1,3 +1,5 @@
+#TODO: document matchers properly.
+
 from grammar import Grammar, Rule
 from first import First
 
@@ -27,7 +29,7 @@ def extract_first(token):
     """
     return token[0] if isinstance(token, tuple) else token
 
-class Parser:
+class Parser(object):
     """Represents a LR(k) parser.
     
     The parser is created with a grammar and a 'k'. The LR parsing tables
@@ -77,7 +79,7 @@ class Parser:
     ParsingError: Unexpected input token: 's'
     """
     
-    def __init__(self, grammar, k=1, keep_states=False, matchers=default_matchers):
+    def __init__(self, grammar, k=1, keep_states=False):
         
         if grammar.root() == None:
             raise InvalidGrammarError('There must be at least one rule in the grammar.')
@@ -156,21 +158,6 @@ class Parser:
         
         assert accepting_state != None
         
-        # fixup matches
-        for state in states:
-            for lookahead, action in state.action.iteritems():
-                new_lookahead = tuple((matchers[symbol] if symbol in matchers else _SymbolMatcher(symbol)) for symbol in lookahead)
-                state.action_match.append((new_lookahead, action))
-            del state.action
-            
-            new_goto = {}
-            for symbol, next_state in state.goto.iteritems():
-                if symbol in matchers:
-                    state.goto_match.append((matchers[symbol], next_state))
-                else:
-                    new_goto[symbol] = next_state
-            state.goto = new_goto
-        
         self.accepting_state = accepting_state
         self.states = states
         self.k = k
@@ -178,6 +165,21 @@ class Parser:
         if not keep_states:
             for state in states:
                 del state.itemset
+                
+    def imbue_matchers(self, matchers=default_matchers):
+        if matchers == None:
+            matchers = dict()
+        
+        for state in self.states:
+            state.action_match = []
+            for lookahead, action in state.action.iteritems():
+                new_lookahead = tuple((matchers[symbol] if symbol in matchers else _SymbolMatcher(symbol)) for symbol in lookahead)
+                state.action_match.append((new_lookahead, action))
+            
+            state.goto_match = []
+            for symbol, next_state in state.goto.iteritems():
+                if symbol in matchers:
+                    state.goto_match.append((matchers[symbol], next_state))
 
     def parse(self, sentence, context=None, extract=extract_first, prereduce_visitor=None, postreduce_visitor=None):
         it = iter(sentence)
@@ -309,6 +311,9 @@ class _State:
         self.goto_match = []
 
     def get_action(self, lookahead):
+        if lookahead in self.action:
+            return self.action[lookahead]
+    
         for match_list, action in self.action_match:
             if len(match_list) != len(lookahead):
                 continue
