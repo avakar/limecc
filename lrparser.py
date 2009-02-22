@@ -322,18 +322,18 @@ class _State:
         """Given a list of items, returns the corresponding closed _State object."""
         i = 0
         
-        itemset = list(self.itemset)
-        while i < len(itemset):
-            curitem = itemset[i]
+        itemlist = list(self.itemset)
+        while i < len(itemlist):
+            curitem = itemlist[i]
             
             for next_lookahead in curitem.next_lookaheads(first):
                 for next_rule in grammar.rules(curitem.next_token()):
                     newitem = _Item(next_rule, 0, next_lookahead)
-                    if newitem not in itemset:
-                        itemset.append(newitem)
+                    if newitem not in self.itemset:
+                        itemlist.append(newitem)
+                        self.itemset.add(newitem)
             
             i += 1
-        self.itemset = set(itemset)
 
 if __name__ == "__main__":
     import doctest
