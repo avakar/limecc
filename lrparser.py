@@ -78,38 +78,25 @@ class Parser(object):
         
         if grammar.root() == None:
             raise InvalidGrammarError('There must be at least one rule in the grammar.')
-            
+        
         self.grammar = Grammar(*grammar)
         self.k = k
         
         # Augment the grammar with a special rule: 'S -> R',
         # where S is a new non-terminal (in this case '').
         aug_grammar = Grammar(Rule('', (grammar.root(),)), *grammar)
-            
+        
         first = First(aug_grammar, k)
         
-        def _close_itemset(itemset):
-            """Given a list of items, returns the corresponding closed _State object."""
-            i = 0
-            while i < len(itemset):
-                curitem = itemset[i]
-                
-                for next_lookahead in curitem.next_lookaheads(first):
-                    for next_rule in aug_grammar.rules(curitem.next_token()):
-                        newitem = _Item(next_rule, 0, next_lookahead)
-                        if newitem not in itemset:
-                            itemset.append(newitem)
-                
-                i += 1
-            return _State(itemset)
-                
         def _goto(state, symbol):
             """Given a state and a symbol, constructs and returns the next state."""
-            res = [_Item(item.rule, item.index + 1, item.lookahead) for item in state.itemset if item.next_token() == symbol]
-            return _close_itemset(res)
+            res = _State([_Item(item.rule, item.index + 1, item.lookahead) for item in state.itemset if item.next_token() == symbol])
+            res.close(aug_grammar, first)
+            return res
         
-        itemset = [_Item(aug_grammar[0], 0, ())]
-        states = [_close_itemset(itemset)]
+        state0 = _State([_Item(aug_grammar[0], 0, ())])
+        state0.close(aug_grammar, first)
+        states = [state0]
         
         i = 0
         while i < len(states):
@@ -304,6 +291,9 @@ class _State:
         
         self.action_match = []
         self.goto_match = []
+        
+    def __repr__(self):
+        return repr(self.itemset)
 
     def get_action(self, lookahead):
         if lookahead in self.action:
@@ -328,6 +318,22 @@ class _State:
         
         raise ParsingError('Unexpected input token: %s' % repr(symbol))
         
+    def close(self, grammar, first):
+        """Given a list of items, returns the corresponding closed _State object."""
+        i = 0
+        
+        itemset = list(self.itemset)
+        while i < len(itemset):
+            curitem = itemset[i]
+            
+            for next_lookahead in curitem.next_lookaheads(first):
+                for next_rule in grammar.rules(curitem.next_token()):
+                    newitem = _Item(next_rule, 0, next_lookahead)
+                    if newitem not in itemset:
+                        itemset.append(newitem)
+            
+            i += 1
+        self.itemset = set(itemset)
 
 if __name__ == "__main__":
     import doctest
