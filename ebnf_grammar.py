@@ -272,6 +272,15 @@ class _ParsingContext:
         item.rules.append(Rule(rep_sym, item.syms, action=_make_one_item_list))
         return _Item([rep_sym], [True], item.rules)
 
+    def item_kleene_star(self, item, _1):
+        """
+        item ::= item '*'
+        """
+        rep_sym = self.new_nonterm()
+        item.rules.append(Rule(rep_sym, [rep_sym] + item.syms, action=_concat_list))
+        item.rules.append(Rule(rep_sym, action=_make_empty_list))
+        return _Item([rep_sym], [True], item.rules)
+
     def item_opt(self, _1, alt_list, _2):
         """
         item ::= [ alt_list ]
@@ -343,6 +352,7 @@ _ebnf_grammar = Grammar(
     Rule('item', ('{', 'alt_list', '}'), action=_ParsingContext.item_rep),
     Rule('item', ('[', 'alt_list', ']'), action=_ParsingContext.item_opt),
     Rule('item', ('item', '+'), action=_ParsingContext.item_kleene_plus),
+    Rule('item', ('item', '*'), action=_ParsingContext.item_kleene_star),
     
     Rule('sym', ('id',), action=_extract_identifier),
     Rule('sym', ('sym', 'id'), action=_concat_symbols)
