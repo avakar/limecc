@@ -90,13 +90,14 @@ class Parser(object):
         
         def _goto(state, symbol):
             """Given a state and a symbol, constructs and returns the next state."""
-            res = _State([_Item(item.rule, item.index + 1, item.lookahead) for item in state.itemset if item.next_token() == symbol])
-            res.close(aug_grammar, first)
-            return res
+            itemlist = [_Item(item.rule, item.index + 1, item.lookahead) for item in state.itemset if item.next_token() == symbol]
+            if not itemlist:
+                return None
+            return _State(itemlist, aug_grammar, first)
         
-        state0 = _State([_Item(aug_grammar[0], 0, ())])
-        state0.close(aug_grammar, first)
+        state0 = _State([_Item(aug_grammar[0], 0, ())], aug_grammar, first)
         states = [state0]
+        state_map = { state0: 0 }
         
         i = 0
         while i < len(states):
@@ -104,15 +105,15 @@ class Parser(object):
             
             for symbol in aug_grammar.symbols():
                 newstate = _goto(state, symbol)
-                if not newstate.itemset:
+                if newstate == None:
                     continue
                     
-                for j, oldstate in enumerate(states):
-                    if newstate.itemset == oldstate.itemset:
-                        state.goto[symbol] = j
-                        break
+                oldstate_index = state_map.get(newstate)
+                if oldstate_index != None:
+                    state.goto[symbol] = oldstate_index
                 else:
                     state.goto[symbol] = len(states)
+                    state_map[newstate] = len(states)
                     states.append(newstate)
             
             i += 1
@@ -284,13 +285,21 @@ class _State:
     corresponding to a reduce.
     """
     
-    def __init__(self, itemset):
-        self.itemset = set(itemset)
+    def __init__(self, itemlist, grammar, first):
+        self._close(itemlist, grammar, first)
         self.goto = {}
         self.action = {}
         
         self.action_match = []
         self.goto_match = []
+        
+    def __eq__(self, other):
+        if not isinstance(other, _State):
+            return False
+        return self.itemset == other.itemset
+        
+    def __hash__(self):
+        return hash(self.itemset)
         
     def __repr__(self):
         return repr(self.itemset)
@@ -318,22 +327,25 @@ class _State:
         
         raise ParsingError('Unexpected input token: %s' % repr(symbol))
         
-    def close(self, grammar, first):
+    def _close(self, itemset, grammar, first):
         """Given a list of items, returns the corresponding closed _State object."""
         i = 0
         
-        itemlist = list(self.itemset)
+        itemset = set(itemset)
+        itemlist = list(itemset)
         while i < len(itemlist):
             curitem = itemlist[i]
             
             for next_lookahead in curitem.next_lookaheads(first):
                 for next_rule in grammar.rules(curitem.next_token()):
                     newitem = _Item(next_rule, 0, next_lookahead)
-                    if newitem not in self.itemset:
+                    if newitem not in itemset:
                         itemlist.append(newitem)
-                        self.itemset.add(newitem)
+                        itemset.add(newitem)
             
             i += 1
+            
+        self.itemset = frozenset(itemset)
 
 if __name__ == "__main__":
     import doctest
