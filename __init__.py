@@ -3,3 +3,4 @@
 from rule import Rule
 from grammar import Grammar
 from lrparser import Parser
+from docparser import parser_LR
