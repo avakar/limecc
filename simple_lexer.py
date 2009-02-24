@@ -25,7 +25,7 @@ class _Classify:
         if ch.isspace():
             return
         
-        if ch.isalnum() or ch == '_':
+        if ch.isalnum() or ch in '_-':
             return 'id'
         
         return ''
