@@ -3,11 +3,10 @@ This is a simple benchmark made in accordance to the following article
 <http://www.python.org/community/sigs/retired/parser-sig/towards-standard/>.
 """
 
-from yapylr.docparser import DocParser
-from yapylr.simple_lexer import simple_lexer
-from yapylr.lrparser import InvalidGrammarError
+from yapylr import parser_LR
 
-class _XPathParser:
+@parser_LR(1)
+class XPathParser:
     """
     LocationPath = RelativeLocationPath | AbsoluteLocationPath;
     AbsoluteLocationPath = '/' | '/', RelativeLocationPath | AbbreviatedAbsoluteLocationPath;
@@ -57,11 +56,6 @@ class _XPathParser:
         root = Expr;
         """
 
-_xpath_parser = DocParser(_XPathParser, k=1)
-
-def parse_xpath(input):
-    return _xpath_parser.parse(input)
-
 if __name__ == '__main__':
     exprs = [
         "child::para",
@@ -97,4 +91,3 @@ if __name__ == '__main__':
         "child::*[self::chapter or self::appendix][position()=last()]",
         "//element[descendant::y[.='z']][1]"
         ]
-

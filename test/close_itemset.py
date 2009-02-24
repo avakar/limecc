@@ -71,12 +71,10 @@ kernel = [
     _Item(r, 2, ()),
 ]
 
-s = _State(kernel)
-
 print "Starting the closure operation..."
 
 from datetime import datetime
 start = datetime.utcnow()
-s.close(grammar, first)
+s = _State(kernel, grammar,first)
 stop = datetime.utcnow()
 print stop - start
