@@ -70,12 +70,24 @@ The repetition introduces a list.
 ('a', ['b', 'b'])
 
 The grouping has the same value as the subexpression,
-except when the value is a one-tuple. In that case, is is unboxed.
+except when the value is a one-tuple. In that case, the tuple is unboxed.
 
 >>> parse_from_ebnf('a', 'root = {("a")};')
 ['a']
 >>> parse_from_ebnf('ab', 'root = {("a", "b")};')
 [('a', 'b')]
+
+As an extension to the ISO-specified EBNF format, the postfix '+' operator
+can be used to indicate "one or more" repetitions.
+
+>>> parse_from_ebnf('aaa', 'root = "a"+;')
+['a', 'a', 'a']
+>>> parse_from_ebnf('a', 'root = "a"+;')
+['a']
+>>> parse_from_ebnf('', 'root = "a"+;') #doctest: +ELLIPSIS
+Traceback (most recent call last):
+    ...
+ParsingError: ...
 
 The optional argument 'action' is called after each ebnf reduction
 to tranform the value of the corresponding nonterminal.
@@ -180,6 +192,9 @@ class _ActionFilter:
 def _make_empty_list(self):
     return []
 
+def _make_one_item_list(self, item):
+    return [item]
+
 def _make_none(self):
     return None
 
@@ -246,6 +261,15 @@ class _ParsingContext:
         item = alt_list.reduce(self.new_nonterm(), visible=True)
         item.rules.append(Rule(rep_sym, (rep_sym, item.syms[0]), action=_concat_list))
         item.rules.append(Rule(rep_sym, action=_make_empty_list))
+        return _Item([rep_sym], [True], item.rules)
+
+    def item_kleene_plus(self, item, _1):
+        """
+        item ::= item '+'
+        """
+        rep_sym = self.new_nonterm()
+        item.rules.append(Rule(rep_sym, [rep_sym] + item.syms, action=_concat_list))
+        item.rules.append(Rule(rep_sym, item.syms, action=_make_one_item_list))
         return _Item([rep_sym], [True], item.rules)
 
     def item_opt(self, _1, alt_list, _2):
@@ -318,6 +342,7 @@ _ebnf_grammar = Grammar(
     Rule('item', ('(', 'alt_list', ')'), action=_ParsingContext.item_group),
     Rule('item', ('{', 'alt_list', '}'), action=_ParsingContext.item_rep),
     Rule('item', ('[', 'alt_list', ']'), action=_ParsingContext.item_opt),
+    Rule('item', ('item', '+'), action=_ParsingContext.item_kleene_plus),
     
     Rule('sym', ('id',), action=_extract_identifier),
     Rule('sym', ('sym', 'id'), action=_concat_symbols)
