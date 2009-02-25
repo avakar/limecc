@@ -2,7 +2,8 @@
 
 """
 >>> class Test:
-...     def p_root(self, minus, int_digits, float_digits):
+...     @action
+...     def root(self, minus, int_digits, float_digits):
 ...         ''' float = ["-"], { digit }, '.', { digit }; '''
 ...         return (minus, int_digits, float_digits)
 >>> Test = parser_LR(1)(Test)
@@ -22,26 +23,33 @@
 ['a', 'a', 'a']
 """
 
-def _augment_parserclass(cls, k):
+def _augment_parserclass(cls, k, imbue_default_matchers):
     from ebnf_grammar import ebnf_parse
 
     rules = []
     root_rules = []
+    if imbue_default_matchers:
+        from matchers import default_matchers
+        matchers = dict(default_matchers)
+    else:
+        matchers = {}
     class_rules, counter = ebnf_parse(cls.__doc__, counter=0) if cls.__doc__ else ([], 0)
     
     for name in dir(cls):
-        if name[:2] != 'p_':
-            continue
-        action = getattr(cls, name)
-        grammar = action.__doc__
-        if not grammar:
-            continue
-        if name == 'p_root':
-            root_rules, counter = ebnf_parse(grammar, action, counter=counter)
-        else:
-            new_rules, counter = ebnf_parse(grammar, action, counter=counter)
-            rules.extend(new_rules)
-            
+        value = getattr(cls, name)
+        if isinstance(value, _Matcher):
+            matchers[name] = value.fn
+            matchers['-' + name] = value
+        elif isinstance(value, _Action):
+            grammar = value.fn.__doc__
+            if not grammar:
+                continue
+            if name == 'root':
+                root_rules, counter = ebnf_parse(grammar, value.fn, counter=counter)
+            else:
+                new_rules, counter = ebnf_parse(grammar, value.fn, counter=counter)
+                rules.extend(new_rules)
+    
     root_rules.extend(class_rules)
     root_rules.extend(rules)
 
@@ -49,6 +57,8 @@ def _augment_parserclass(cls, k):
     from lrparser import Parser
     grammar = Grammar(*root_rules)
     cls.parser = Parser(grammar, k)
+    
+    cls.parser.imbue_matchers(matchers)
 
 def _augment_parse(self, input, **kwargs):
     return self.parser.parse(input, context=self, **kwargs)
@@ -56,12 +66,29 @@ def _augment_parse(self, input, **kwargs):
 def _augment_imbue_matchers(self, *args, **kwargs):
     return self.parser.imbue_matchers(*args, **kwargs)
 
+class _DecoratedMethod:
+    def __init__(self, fn):
+        self.fn = fn
+
+class _Matcher(_DecoratedMethod):
+    pass
+    
+class _Action(_DecoratedMethod):
+    pass
+
+def matcher(fn):
+    return _Matcher(fn)
+    
+def action(fn):
+    return _Action(fn)
+
 class parser_LR:
-    def __init__(self, k):
+    def __init__(self, k, default_matchers=False):
         self.k = k
+        self.default_matchers = default_matchers
         
     def __call__(self, cls):
-        _augment_parserclass(cls, self.k)
+        _augment_parserclass(cls, self.k, self.default_matchers)
         cls.parse = _augment_parse
         cls.imbue_matchers = _augment_imbue_matchers
         return cls
