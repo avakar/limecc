@@ -4,11 +4,26 @@ from grammar import Grammar, Rule
 from first import First
 from matchers import default_matchers
 
-class InvalidGrammarError(BaseException):
+class InvalidGrammarError(Exception):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
-    def __init__(self, message, states=None):
-        BaseException.__init__(self, message)
+
+class ActionConflictError(InvalidGrammarError):
+    """Raised during a construction of a parser, if the grammar is not LR(k)."""
+    def __init__(self, message, relevant_state, states):
+        InvalidGrammarError.__init__(self, message)
         self.states = states
+        self.relevant_state = relevant_state
+    
+    def pretty_states(self):
+        """Returns a string with pretty-printed itemsets."""
+        res = []
+        for state in self.states:
+            for item in state.itemset:
+                res.append(str(item))
+                res.append('\n')
+            res.append('\n')
+        return ''.join(res)
+        
 
 class ParsingError(BaseException):
     """Raised by a parser if the input word is not a sentence of the grammar."""
@@ -35,15 +50,15 @@ class Parser(object):
     >>> Parser(not_a_lr0_grammar, k=0) # doctest: +ELLIPSIS
     Traceback (most recent call last):
         ...
-    InvalidGrammarError: LR(0) table conflict: ...
+    ActionConflictError: LR(0) table conflict: ...
 
     >>> lr0_grammar = Grammar(
     ...     Rule('list', action=lambda self: []),
     ...     Rule('list', ('list', 'item'), action=lambda self, l, i: l + [i]))
     >>> p = Parser(lr0_grammar, k=0)
     >>> print p.grammar
-    list ::= <empty>
-    list ::= list item
+    'list' = ;
+    'list' = 'list', 'item';
     
     The method 'parse' will accept an iterable of tokens, which are arbitrary objects.
     A token T is matched to a terminal symbol S in the following manner. First,
@@ -122,8 +137,8 @@ class Parser(object):
         
         def add_action(state, lookahead, action, item):
             if lookahead in state.action and state.action[lookahead] != action:
-                raise InvalidGrammarError('LR(%d) table conflict: actions %s, %s trying to add %s'
-                    % (k, state.action[lookahead], action, item), states)
+                raise ActionConflictError('LR(%d) table conflict: actions %s, %s trying to add %s'
+                    % (k, state.action[lookahead], action, item), state, states)
             state.action[lookahead] = action
         
         for state_id, state in enumerate(states):
@@ -243,13 +258,18 @@ class _Item:
         return hash((self.rule, self.index, self.lookahead))
         
     def __str__(self):
-        out = [self.rule.left, '::=']
-        out.extend(self.rule.right)
-        out.insert(self.index + 2, '.')
-        return ' '.join(out) + ' ' + str(self.lookahead)
-    
-    def __repr__(self):
-        return ''.join(("'", self.__str__(), "'"))
+        right_syms = [repr(symbol) for symbol in self.rule.right]
+        if self.index == 0:
+            if not right_syms:
+                right_syms = ['. ']
+            else:
+                right_syms[0] = '. ' + right_syms[0]
+        elif self.index == len(right_syms):
+            right_syms[self.index - 1] = right_syms[self.index - 1] + ' . '
+        else:
+            right_syms[self.index - 1] = right_syms[self.index - 1] + ' . ' + right_syms[self.index]
+            del right_syms[self.index]
+        return ''.join((repr(self.rule.left), ' = ', ', '.join(right_syms), '; ', str(self.lookahead)))
     
     def next_token(self):
         return self.rule.right[self.index] if not self.final else None
@@ -303,6 +323,13 @@ class _State:
         
     def __repr__(self):
         return repr(self.itemset)
+    
+    def __str__(self):
+        res = []
+        for item in self.itemset:
+            res.append(str(item))
+        res.sort()
+        return '\n'.join(res)
 
     def get_action(self, lookahead):
         if lookahead in self.action:

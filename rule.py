@@ -23,19 +23,19 @@ class Rule:
     
     >>> r = Rule('list', ('list', 'item'))
     >>> print r
-    list ::= list item
+    'list' = 'list', 'item';
     
     The symbols can be arbitrary objects, not just strings. They must,
     however, be hashable. (Hashability is not enforced by the Rule class
     directly.)
     
     >>> print Rule(0, (1, 2))
-    0 ::= 1 2
+    0 = 1, 2;
     
     Occasionaly, you must pass a one-tuple.
     
     >>> print Rule('root', ('list',))
-    root ::= list
+    'root' = 'list';
     
     Note that terminal and non-terminal symbols are written
     using the same syntax -- the differentiation only occurs
@@ -45,12 +45,12 @@ class Rule:
     A rule may have no symbols on the right, such rules produce empty strings.
     
     >>> print Rule('e', ())
-    e ::= <empty>
+    'e' = ;
     
     An empty tuple is also the default for the second arguement.
     
     >>> print Rule('e')
-    e ::= <empty>
+    'e' = ;
     
     The left and right symbols can be accessed via 'left' and 'right' members.
     
@@ -97,17 +97,11 @@ class Rule:
     def __str__(self):
         """
         >>> print Rule('a', ('b', 'c'))
-        a ::= b c
+        'a' = 'b', 'c';
         >>> print Rule('a')
-        a ::= <empty>
+        'a' = ;
         """
-        
-        if self.right:
-            out = [str(self.left), '::=']
-            out.extend(str(symbol) for symbol in self.right)
-        else:
-            out = [str(self.left), '::= <empty>']
-        return ' '.join(out)
+        return ''.join((repr(self.left), ' = ', ', '.join(repr(symbol) for symbol in self.right), ';'))
     
     def __repr__(self):
         """
