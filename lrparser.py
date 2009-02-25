@@ -23,7 +23,18 @@ class ActionConflictError(InvalidGrammarError):
                 res.append('\n')
             res.append('\n')
         return ''.join(res)
+    
+    def relevant_state_trace(self):
+        state = self.relevant_state
         
+        res = []
+        while state != None:
+            res.append(str(state))
+            
+            next_id = state.parent_id
+            state = self.states[next_id] if next_id != None else None
+        
+        return '\n'.join(res)
 
 class ParsingError(BaseException):
     """Raised by a parser if the input word is not a sentence of the grammar."""
@@ -129,6 +140,7 @@ class Parser(object):
                 else:
                     state.goto[symbol] = len(states)
                     state_map[newstate] = len(states)
+                    newstate.parent_id = i
                     states.append(newstate)
             
             i += 1
@@ -307,6 +319,8 @@ class _State:
     
     def __init__(self, itemlist, grammar, first):
         self._close(itemlist, grammar, first)
+        self.parent_id = None
+
         self.goto = {}
         self.action = {}
         
@@ -327,9 +341,9 @@ class _State:
     def __str__(self):
         res = []
         for item in self.itemset:
-            res.append(str(item))
+            res.append(str(item) + '\n')
         res.sort()
-        return '\n'.join(res)
+        return ''.join(res)
 
     def get_action(self, lookahead):
         if lookahead in self.action:
