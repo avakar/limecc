@@ -36,9 +36,13 @@ class ActionConflictError(InvalidGrammarError):
         
         return '\n'.join(res)
 
-class ParsingError(BaseException):
+class ParsingError(Exception):
     """Raised by a parser if the input word is not a sentence of the grammar."""
-    pass
+    def __init__(self, message, position):
+        self.position = position
+        Exception.__init__(self, message)
+    def __str__(self):
+        return '%s, position %d' % (self.args[0], self.position)
     
 def extract_first(token):
     """Returns the argument or, if it is a tuple, its first member.
@@ -97,7 +101,7 @@ class Parser(object):
     >>> p.parse('spam')
     Traceback (most recent call last):
         ...
-    ParsingError: Unexpected input token: 's'
+    ParsingError: Unexpected input token: 's', position 1
     """
     
     def __init__(self, grammar, k=1, keep_states=False):
@@ -216,12 +220,13 @@ class Parser(object):
         
         stack = [0]
         asts = []
+        token_counter = 0
         while True:
             state_id = stack[-1]
             state = self.states[state_id]
             
             key = tuple(extract(token) for token in buf)
-            action = state.get_action(key)
+            action = state.get_action(key, token_counter)
             if action:   # reduce
                 if len(action.right) > 0:
                     if prereduce_visitor:
@@ -238,7 +243,7 @@ class Parser(object):
                     if postreduce_visitor:
                         postreduce_visitor(action, new_ast)
                 
-                stack.append(self.states[stack[-1]].get_next_state(action.left))
+                stack.append(self.states[stack[-1]].get_next_state(action.left, token_counter))
                 asts.append(new_ast)
             else:   # shift
                 tok = get_shift_token()
@@ -247,10 +252,11 @@ class Parser(object):
                         assert len(asts) == 1
                         return asts[0]
                     else:
-                        raise ParsingError('Reached the end of file prematurely.')
+                        raise ParsingError('Reached the end of file prematurely.', token_counter)
+                token_counter += 1
                 
                 key = extract(tok)
-                stack.append(state.get_next_state(key))
+                stack.append(state.get_next_state(key, token_counter))
                 asts.append(tok)
 
 class _Item:
@@ -345,7 +351,7 @@ class _State:
         res.sort()
         return ''.join(res)
 
-    def get_action(self, lookahead):
+    def get_action(self, lookahead, counters):
         if lookahead in self.action:
             return self.action[lookahead]
     
@@ -356,9 +362,9 @@ class _State:
             if all(match(symbol) for match, symbol in zip(match_list, lookahead)):
                 return action
         
-        raise ParsingError('Unexpected input token: %s' % repr(lookahead))
+        raise ParsingError('Unexpected input token: %s' % repr(lookahead), counters)
 
-    def get_next_state(self, symbol):
+    def get_next_state(self, symbol, counters):
         if symbol in self.goto:
             return self.goto[symbol]
             
@@ -366,7 +372,7 @@ class _State:
             if match(symbol):
                 return next_state
         
-        raise ParsingError('Unexpected input token: %s' % repr(symbol))
+        raise ParsingError('Unexpected input token: %s' % repr(symbol), counters)
         
     def _close(self, itemset, grammar, first):
         """Given a list of items, returns the corresponding closed _State object."""
