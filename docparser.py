@@ -74,6 +74,8 @@ def _augment_imbue_matchers(self, *args, **kwargs):
 class _DecoratedMethod:
     def __init__(self, fn):
         self.fn = fn
+    def __call__(self, *args, **kwargs):
+        return self.fn(*args, **kwargs)
 
 class _Matcher(_DecoratedMethod):
     pass
