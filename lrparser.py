@@ -288,6 +288,9 @@ class _Item:
             right_syms[self.index - 1] = right_syms[self.index - 1] + ' . ' + right_syms[self.index]
             del right_syms[self.index]
         return ''.join((repr(self.rule.left), ' = ', ', '.join(right_syms), '; ', str(self.lookahead)))
+        
+    def is_kernel(self):
+        return self.index != 0 or self.rule.left == ''
     
     def next_token(self):
         return self.rule.right[self.index] if not self.final else None
@@ -347,7 +350,7 @@ class _State:
     def __str__(self):
         res = []
         for item in self.itemset:
-            res.append(str(item) + '\n')
+            res.append(('#' if not item.is_kernel() else ' ') + str(item) + '\n')
         res.sort()
         return ''.join(res)
 
