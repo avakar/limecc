@@ -12,11 +12,11 @@ class _Classify:
         if ch == self.quote:
             self.quote = None
             return
+        if self.quote:
+            return 'ql'
         if ch in '\'"':
             self.quote = ch
             return ''
-        if self.quote:
-            return 'ql'
         
         if ch == '#':
             self.comment = True
