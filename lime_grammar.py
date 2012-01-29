@@ -37,6 +37,9 @@ class LexRegex:
     def __hash__(self):
         return hash(self.regex)
 
+    def __repr__(self):
+        return 'LexRegex(%r)' % self.regex
+
 class LexLiteral:
     def __init__(self, literal):
         self.literal = literal
@@ -50,6 +53,9 @@ class LexLiteral:
     def __hash__(self):
         return hash(self.literal)
 
+    def __repr__(self):
+        return 'LexLiteral(%r)' % self.literal
+
 class _LimeLexerClassify:
     def __init__(self):
         self.quote = None
@@ -61,8 +67,6 @@ class _LimeLexerClassify:
         if self.snippet != 0:
             if ch == '}':
                 self.snippet -= 1
-                if not self.snippet:
-                    return
             elif ch == '{':
                 self.snippet += 1
             return 'snippet'
@@ -113,15 +117,21 @@ class _LimeGrammar:
 
     def __init__(self):
         self.implicit_tokens = {}
+        self.processed_implicit_tokens = set()
 
     @action
     def root(self, g):
         """
         root = grammar;
         """
-        for lex_rhs, token_name in self.implicit_tokens.iteritems():
-            g.lex_rules.append(((token_name, None), (lex_rhs, None), None))
         return g
+
+    def _update_implicit_tokens(self, g):
+        for lex_rhs, token_name in self.implicit_tokens.iteritems():
+            if token_name not in self.processed_implicit_tokens:
+                g.lex_rules.append(((token_name, None), (lex_rhs, None), None))
+                g.token_comments[token_name] = lex_rhs
+                self.processed_implicit_tokens.add(token_name)
 
     @action
     def grammar_empty(self):
@@ -131,6 +141,7 @@ class _LimeGrammar:
         g = Grammar()
         g.lex_rules = []
         g.sym_annot = {}
+        g.token_comments = {}
         g.user_include = None
         g.token_type = None # XXX: perhaps default_type?
         return g
@@ -166,6 +177,7 @@ class _LimeGrammar:
         """
         rule.id = len(g)
         g.add(rule)
+        self._update_implicit_tokens(g)
         return g
 
     @action
@@ -174,6 +186,7 @@ class _LimeGrammar:
         grammar = grammar, lex_stmt;
         """
         g.lex_rules.append(rule)
+        g.add_symbol(rule[0][0])
         return g
 
     @action
@@ -290,10 +303,15 @@ class _LimeGrammar:
 
 def lime_lexer(input):
     for tok in simple_lexer(input, _LimeLexerClassify()):
-        if isinstance(tok, tuple) and tok[0] == 'id' and tok[1][:1] == '%':
-            yield ('kw_' + tok[1][1:], tok[1])
-        else:
-            yield tok
+        if isinstance(tok, tuple):
+            if tok[0] == 'id' and tok[1][:1] == '%':
+                yield ('kw_' + tok[1][1:], tok[1])
+                continue
+            if tok[0] == 'snippet':
+                yield ('snippet', tok[1][:-1])
+                continue
+
+        yield tok
 
 def parse_lime_grammar(input):
     p = _LimeGrammar()

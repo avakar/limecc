@@ -1,5 +1,4 @@
 from lime_grammar import LexDiscard, LexRegex
-from lime_grammar import LexDiscard, LexRegex
 from dfa import make_dfa_from_literal
 
 def _make_lexer(g, dfa):
@@ -53,7 +52,7 @@ def _make_lexer(g, dfa):
         action_stub = ['static void stub_%s(basic_lexer & l, TokenSink & token_sink)' % i, '{']
         if not isinstance(g.sym_annot.get(lhs), LexDiscard):
             if action is None:
-                if g.sym_annot[lhs] is None:
+                if g.sym_annot.get(lhs) is None:
                     action_stub.append('    token_sink.push_token(tok::%s);' % lhs.lower())
                 else:
                     action_stub.append('    token_sink.push_token(tok::%s, (%s)l.m_token);'
@@ -226,7 +225,6 @@ private:
 def lime_cpp(p):
     g = p.grammar
     dfa = p.lexer
-    lower_terminals = True
 
     sym_annot = dict(g.sym_annot.iteritems())
     for sym in g.symbols():
@@ -236,7 +234,7 @@ def lime_cpp(p):
             else:
                 sym_annot[sym] = None
         else:
-            if sym_annot[sym] is not None:
+            if sym_annot[sym] is not None and not isinstance(sym_annot[sym], LexDiscard):
                 sym_annot[sym] = sym_annot[sym].strip()
 
     syms_by_type = {}
@@ -247,13 +245,16 @@ def lime_cpp(p):
     nonterm_indexes = dict([(nonterm, i) for i, nonterm in enumerate(g.nonterms())])
     term_indexes = dict([(term, i) for i, term in enumerate(g.terminals())])
 
-    ast_stacks = ['std::vector<%s> m_ast_stack_%d;' % (annot, i)
+    ast_stacks = ['std::vector<%s > m_ast_stack_%d;' % (annot, i)
         for annot, i in annot_indexes.iteritems() if annot is not None and not isinstance(annot, LexDiscard)]
 
-    if lower_terminals:
-        tokens = [term.lower() for term in g.terminals()]
-    else:
-        tokens = sorted(g.terminals())
+    tokens = [term.lower() for term in g.terminals()]
+    token_lines = []
+    for term in g.terminals():
+        if g.token_comments.get(term) is not None:
+            token_lines.append('%s, // %s' % (term.lower(), g.token_comments[term]))
+        else:
+            token_lines.append('%s,' % term.lower())
 
     root_type = sym_annot.get(g.root())
 
@@ -280,19 +281,19 @@ def lime_cpp(p):
         if rule.lime_action is None:
             # This must be either a typed non-terminal with exactly one
             # typed rhs symbol, or a void non-terminal with no typed rhs symbols
-            if sym_annot[rule.left] is None:
-                if len(idx_counts) != 0:
-                    raise RuntimeError('XXX 4') # This should probably be done before the generation begins
-            else:
+            if sym_annot[rule.left] is not None:
                 if (len(idx_counts) != 1 or idx_counts.values()[0] != 1
                         or idx_counts.keys()[0] != annot_indexes[sym_annot[rule.left]]):
                     raise RuntimeError('XXX 2') # This should probably be done before the generation begins
 
-        modify_inplace = any((rule.lhs_name == rhs for rhs in rule.rhs_names))
+        modify_inplace = rule.lhs_name is not None and any((rule.lhs_name == rhs for rhs in rule.rhs_names))
         if rule.lime_action is not None:
             if not modify_inplace and sym_annot[rule.left] is not None:
                 f.append('    %s res[1] = {};' % sym_annot[rule.left])
-            f.append('    self.m_actions.a%d(' % i)
+            if rule.lhs_name or sym_annot[rule.left] is None:
+                f.append('    self.m_actions.a%d(' % i)
+            else:
+                f.append('    res[0] = self.m_actions.a%d(' % i)
             params = []
             if not modify_inplace and rule.lhs_name and sym_annot[rule.left] is not None:
                 params.append('        res[0]')
@@ -302,13 +303,12 @@ def lime_cpp(p):
                 used_indexes.setdefault(idx, 0)
                 # XXX: do this beforehand
                 if rhs_name and sym_annot[right] is None:
-                    raise RuntimeError('XXX 3')
+                    raise RuntimeError('A symbol has a name, yet it has no type: %s' % right)
                 if rhs_name:
                     params.append(
                         '            self.m_ast_stack_%d.end()[-%d]' % (
                         idx, idx_counts[idx] - used_indexes[idx]))
-                if rhs_name == rule.lhs_name:
-                    assert modify_inplace
+                if modify_inplace and rhs_name == rule.lhs_name:
                     inplace_swap_stack = idx
                     inplace_swap = used_indexes[idx]
                 used_indexes[idx] += 1
@@ -344,10 +344,14 @@ def lime_cpp(p):
         for sym, sym_name in zip(rule.right, rule.rhs_names):
             _add_param(sym, sym_name)
 
-        if rule.lime_action:
-            lime_actions.append("void a%d(%s)\n{%s}\n" % (i, ', '.join(param_list), rule.lime_action))
-        else:
-            lime_actions.append("void a%d(%s)\n{}\n" % (i, ', '.join(param_list)))
+        if rule.lime_action is not None:
+            if not rule.lhs_name and sym_annot[rule.left] is not None:
+                ret_type = sym_annot[rule.left]
+            else:
+                ret_type = 'void'
+            lime_actions.append("%s a%d(%s)\n{%s}\n" % (ret_type, i, ', '.join(param_list), rule.lime_action))
+#        else:
+#            lime_actions.append("void a%d(%s)\n{}\n" % (i, ', '.join(param_list)))
 
     def _get_action_row(lookahead):
         action_row = []
@@ -380,6 +384,8 @@ def lime_cpp(p):
 
     push_token_lines = []
     for type, terms in terms_by_type.iteritems():
+        if isinstance(type, LexDiscard):
+            continue
         if type is None:
             push_token_lines.extend([
                 "void push_token(tok::token_kind kind)",
@@ -433,7 +439,7 @@ def lime_cpp(p):
     sd['user_include'] = '' if g.user_include is None else g.user_include
     sd['finish_function'] = finish_function
     sd['ast_stacks'] = '\n    '.join(ast_stacks)
-    sd['tokens'] = ',\n    '.join(tokens)
+    sd['tokens'] = '\n    '.join(token_lines)
     sd['reduce_functions'] = '\n    '.join(reduce_functions)
     sd['lime_actions'] = '\n'.join(lime_actions)
     sd['term_count'] = str(len(g.terminals())+1)
@@ -492,7 +498,10 @@ private:
         static state_t const goto_table[$term_count_m1][$state_count] = {
             { $term_goto_table },
         };
-        m_state_stack.push_back(goto_table[kind-1][m_state_stack.back()]);
+        std::size_t new_state = goto_table[kind-1][m_state_stack.back()];
+        if (new_state == 0)
+            throw std::runtime_error("Unexpected token");
+        m_state_stack.push_back(new_state);
     }
 
     void do_reduce(tok::token_kind lookahead)

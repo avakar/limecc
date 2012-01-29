@@ -21,6 +21,9 @@ def _main(options, fname):
         open(options.output, 'w').write(lime_cpp(p))
     except Exception, e:
         _error(e)
+        import traceback
+        traceback.print_exc(sys.stderr)
+        return 1
 
 if __name__ == '__main__':
     from optparse import OptionParser
@@ -32,4 +35,5 @@ if __name__ == '__main__':
     if len(args) != 1:
         opts.error('exactly one filename must be specified')
 
-    _main(options, args[0])
+    import sys
+    sys.exit(_main(options, args[0]))

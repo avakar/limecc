@@ -15,6 +15,9 @@ class _Lit:
     def __repr__(self):
         return repr(sorted(self.charset))
 
+class _Empty:
+    pass
+
 class _Rep:
     def __init__(self, term):
         self.term = term
@@ -34,8 +37,6 @@ class _RegexParser:
     """
     root = alt;
     alt = concat;
-
-    concat = rep;
 
     rep = atom;
 
@@ -109,6 +110,20 @@ class _RegexParser:
         return _Concat(atom, _Rep(atom))
 
     @action
+    def rep_q(self, atom):
+        """
+        rep = atom, _q;
+        """
+        return _Alt(_Empty(), atom)
+
+    @action
+    def concat_empty(self):
+        """
+        concat = ;
+        """
+        return _Empty()
+
+    @action
     def concat(self, lhs, rhs):
         """
         concat = concat, rep;
@@ -146,6 +161,8 @@ def _regex_lexer(input):
             yield ('minus', ch)
         elif ch == '|':
             yield ('pipe', ch)
+        elif ch == '?':
+            yield ('q', ch)
         else:
             yield ('ch', ch)
     if esc:
@@ -167,30 +184,34 @@ def make_enfa_from_regex(regex, accept_label):
     # The NFA now looks like this
     # 0 --epsilon--> 2 --regex--> 3 --epsilon--> 1
 
-    changed = True
-    while changed:
-        changed = False
+    while True:
         for edge in fa.get_edges():
             source, target, r = edge.source, edge.target, edge.label
-            fa.remove_edge(edge)
             if isinstance(r, _Alt):
+                fa.remove_edge(edge)
                 a = fa.new_state(target)
                 fa.new_edge(source, target, r.lhs)
                 fa.new_edge(source, a, r.rhs)
-                changed = True
+                break
             elif isinstance(r, _Concat):
+                fa.remove_edge(edge)
                 a = fa.new_state()
                 fa.new_edge(source, a, r.lhs)
                 fa.new_edge(a, target, r.rhs)
-                changed = True
+                break
             elif isinstance(r, _Rep):
+                fa.remove_edge(edge)
                 a = fa.new_state()
                 fa.new_edge(source, a)
                 fa.new_edge(a, target)
                 fa.new_edge(a, a, r.term)
-                changed = True
-            else:
-                fa.new_edge(source, target, r)
+                break
+            elif isinstance(r, _Empty):
+                fa.remove_edge(edge)
+                fa.new_edge(source, target)
+                break
+        else:
+            break
 
     for edge in fa.get_edges():
         if edge.label is not None:

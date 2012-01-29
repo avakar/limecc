@@ -98,7 +98,11 @@ class Grammar:
         
         for symbol in rule.right:
             self._symbols.add(symbol)
-    
+
+    def add_symbol(self, symbol):
+        """Addes a symbol without adding any rule that references it."""
+        self._symbols.add(symbol)
+
     def extend(self, rules):
         """Extends the grammar by the given set of rules."""
         for rule in rules:

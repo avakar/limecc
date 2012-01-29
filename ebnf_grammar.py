@@ -128,6 +128,8 @@ class _Item:
         self.rules.extend(item.rules)
 
 def _pretty_forward_args(self, *args):
+    if len(args) == 0:
+        return None
     if len(args) == 1:
         return args[0]
     return args
