@@ -1,4 +1,5 @@
 from lime_grammar import LexDiscard, LexRegex
+from lime_grammar import LexDiscard, LexRegex
 from dfa import make_dfa_from_literal
 
 def _make_lexer(g, dfa):
@@ -47,12 +48,16 @@ def _make_lexer(g, dfa):
     for i, lex_rule in enumerate(g.lex_rules):
         (lhs, lhs_name), (rhs, rhs_name), action = lex_rule
         if (rhs_name is None) != (action is None):
-            raise RuntimeError('XXX')
+            raise RuntimeError('XXX 1')
         
         action_stub = ['static void stub_%s(basic_lexer & l, TokenSink & token_sink)' % i, '{']
         if not isinstance(g.sym_annot.get(lhs), LexDiscard):
-            if lhs not in g.sym_annot:
-                action_stub.append('    token_sink.push_token(tok::%s);' % lhs.lower())
+            if action is None:
+                if g.sym_annot[lhs] is None:
+                    action_stub.append('    token_sink.push_token(tok::%s);' % lhs.lower())
+                else:
+                    action_stub.append('    token_sink.push_token(tok::%s, (%s)l.m_token);'
+                        % (lhs.lower(), g.sym_annot[lhs]))
             else:
                 action_stub.append('    %s res;' % g.sym_annot[lhs])
                 params = []
@@ -272,17 +277,24 @@ def lime_cpp(p):
             idx_counts.setdefault(idx, 0)
             idx_counts[idx] += 1
 
-        if (not rule.lime_action
-                and (len(idx_counts) != 1 or idx_counts.values()[0] != 1
-                or idx_counts.keys()[0] != annot_indexes[sym_annot[rule.left]])):
-            raise RuntimeError('XXX') # This should probably be done before the generation begins
+        if rule.lime_action is None:
+            # This must be either a typed non-terminal with exactly one
+            # typed rhs symbol, or a void non-terminal with no typed rhs symbols
+            if sym_annot[rule.left] is None:
+                if len(idx_counts) != 0:
+                    raise RuntimeError('XXX 4') # This should probably be done before the generation begins
+            else:
+                if (len(idx_counts) != 1 or idx_counts.values()[0] != 1
+                        or idx_counts.keys()[0] != annot_indexes[sym_annot[rule.left]]):
+                    raise RuntimeError('XXX 2') # This should probably be done before the generation begins
 
-        if rule.lime_action:
-            if sym_annot[rule.left] is not None:
+        modify_inplace = any((rule.lhs_name == rhs for rhs in rule.rhs_names))
+        if rule.lime_action is not None:
+            if not modify_inplace and sym_annot[rule.left] is not None:
                 f.append('    %s res[1] = {};' % sym_annot[rule.left])
             f.append('    self.m_actions.a%d(' % i)
             params = []
-            if rule.lhs_name and sym_annot[rule.left] is not None:
+            if not modify_inplace and rule.lhs_name and sym_annot[rule.left] is not None:
                 params.append('        res[0]')
             used_indexes = {}
             for right, rhs_name in zip(rule.right, rule.rhs_names):
@@ -290,20 +302,32 @@ def lime_cpp(p):
                 used_indexes.setdefault(idx, 0)
                 # XXX: do this beforehand
                 if rhs_name and sym_annot[right] is None:
-                    raise RuntimeError('XXX')
+                    raise RuntimeError('XXX 3')
                 if rhs_name:
                     params.append(
                         '            self.m_ast_stack_%d.end()[-%d]' % (
                         idx, idx_counts[idx] - used_indexes[idx]))
+                if rhs_name == rule.lhs_name:
+                    assert modify_inplace
+                    inplace_swap_stack = idx
+                    inplace_swap = used_indexes[idx]
                 used_indexes[idx] += 1
             f.append(',\n'.join(params))
             f.append('    );')
 
-        if rule.lime_action:
+            if modify_inplace and inplace_swap:
+                f.append('    using std::swap; swap(self.m_ast_stack_%d.end()[-%d], self.m_ast_stack_%d.end()[-%d]);'
+                    % (inplace_swap_stack, idx_counts[inplace_swap_stack],
+                    inplace_swap_stack, idx_counts[inplace_swap_stack] - inplace_swap))
             for idx, count in idx_counts.iteritems():
-                f.append('    self.m_ast_stack_%d.erase(self.m_ast_stack_%d.end() - %d, self.m_ast_stack_%d.end());'
-                    % (idx, idx, count, idx))
-            f.append('    self.m_ast_stack_%d.push_back(res[0]);' % annot_indexes[sym_annot[rule.left]])
+                if modify_inplace and idx == inplace_swap_stack:
+                    count -= 1
+                if count != 0:
+                    f.append('    self.m_ast_stack_%d.erase(self.m_ast_stack_%d.end() - %d, self.m_ast_stack_%d.end());'
+                        % (idx, idx, count, idx))
+            if not modify_inplace and sym_annot[rule.left] is not None:
+                f.append('    self.m_ast_stack_%d.push_back(res[0]);' % annot_indexes[sym_annot[rule.left]])
+
         if rule.right:
             f.append('    self.m_state_stack.erase(self.m_state_stack.end() - %d, self.m_state_stack.end());'
                 % len(rule.right))
@@ -315,7 +339,8 @@ def lime_cpp(p):
         def _add_param(sym, name):
             if name:
                 param_list.append('%s & %s' % (sym_annot[sym], name) )
-        _add_param(rule.left, rule.lhs_name)
+        if not modify_inplace:
+            _add_param(rule.left, rule.lhs_name)
         for sym, sym_name in zip(rule.right, rule.rhs_names):
             _add_param(sym, sym_name)
 
@@ -400,8 +425,12 @@ def lime_cpp(p):
         sd['lexer'] = ''
         sd['lexer_typedef'] = ''
 
-    sd['user_include'] = ''
-    sd['root_type'] = root_type
+    if root_type is not None:
+        sd['root_typedef'] = 'typedef %s root_type;' % root_type
+    else:
+        sd['root_typedef'] = ''
+
+    sd['user_include'] = '' if g.user_include is None else g.user_include
     sd['finish_function'] = finish_function
     sd['ast_stacks'] = '\n    '.join(ast_stacks)
     sd['tokens'] = ',\n    '.join(tokens)
@@ -424,7 +453,8 @@ templ = """\
 #ifndef PARSER
 #define PARSER
 
-$user_include#include <cassert>
+$user_include
+#include <cassert>
 #include <vector>
 #include <stdexcept> // XXX
 
@@ -443,7 +473,7 @@ class parser
 {
 public:
     typedef int state_t;
-    typedef $root_type root_type;
+    $root_typedef
 
     parser()
     {

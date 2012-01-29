@@ -131,7 +131,16 @@ class _LimeGrammar:
         g = Grammar()
         g.lex_rules = []
         g.sym_annot = {}
+        g.user_include = None
         g.token_type = None # XXX: perhaps default_type?
+        return g
+
+    @action
+    def grammar_kw_user_include(self, g, incl):
+        """
+        grammar = grammar, _kw_include, snippet;
+        """
+        g.user_include = incl
         return g
 
     @action
