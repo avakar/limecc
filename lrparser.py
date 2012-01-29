@@ -54,6 +54,16 @@ def extract_first(token):
     """
     return token[0] if isinstance(token, tuple) else token
 
+def extract_second(token):
+    """Returns the argument or, if it is a tuple, its second member.
+    
+    >>> extract_first('list')
+    'list'
+    >>> extract_first(('item', 42))
+    42
+    """
+    return token[1] if isinstance(token, tuple) else token
+
 class Parser(object):
     """Represents a LR(k) parser.
     
@@ -109,7 +119,7 @@ class Parser(object):
         if grammar.root() == None:
             raise InvalidGrammarError('There must be at least one rule in the grammar.')
         
-        self.grammar = Grammar(*grammar)
+        self.grammar = grammar
         self.k = k
         
         # Augment the grammar with a special rule: 'S -> R',
@@ -123,9 +133,9 @@ class Parser(object):
             itemlist = [_Item(item.rule, item.index + 1, item.lookahead) for item in state.itemset if item.next_token() == symbol]
             if not itemlist:
                 return None
-            return _State(itemlist, aug_grammar, first)
+            return State(itemlist, aug_grammar, first)
         
-        state0 = _State([_Item(aug_grammar[0], 0, ())], aug_grammar, first)
+        state0 = State([_Item(aug_grammar[0], 0, ())], aug_grammar, first)
         states = [state0]
         state_map = { state0: 0 }
         
@@ -195,7 +205,8 @@ class Parser(object):
                 if symbol in matchers:
                     state.goto_match.append((matchers[symbol], next_state))
 
-    def parse(self, sentence, context=None, extract=extract_first, prereduce_visitor=None, postreduce_visitor=None):
+    def parse(self, sentence, context=None, extract=extract_first,
+            extract_value=lambda x: x, prereduce_visitor=None, postreduce_visitor=None):
         it = iter(sentence)
         buf = []
         while len(buf) < self.k:
@@ -257,7 +268,7 @@ class Parser(object):
                 
                 key = extract(tok)
                 stack.append(state.get_next_state(key, token_counter))
-                asts.append(tok)
+                asts.append(extract_value(tok))
 
 class _Item:
     def __init__(self, rule, index, lookahead):
@@ -315,7 +326,7 @@ class _SymbolMatcher:
     def __repr__(self):
         return '_SymbolMatcher(%s)' % self.symbol
 
-class _State:
+class State:
     """Represents a single state of a LR(k) parser.
     
     There are two tables of interest. The 'goto' table is a dict mapping
@@ -332,12 +343,12 @@ class _State:
 
         self.goto = {}
         self.action = {}
-        
+
         self.action_match = []
         self.goto_match = []
-        
+
     def __eq__(self, other):
-        if not isinstance(other, _State):
+        if not isinstance(other, State):
             return False
         return self.itemset == other.itemset
         
@@ -378,7 +389,7 @@ class _State:
         raise ParsingError('Unexpected input token: %s' % repr(symbol), counters)
         
     def _close(self, itemset, grammar, first):
-        """Given a list of items, returns the corresponding closed _State object."""
+        """Given a list of items, returns the corresponding closed State object."""
         i = 0
         
         itemset = set(itemset)

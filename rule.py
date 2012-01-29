@@ -79,20 +79,22 @@ class Rule:
     [1]
     """
 
-    def __init__(self, left, right=(), action=pretty_reduce):
+    def __init__(self, left, right=(), action=pretty_reduce, **extra):
         """
         Constructs a rule from the left symbol, an iterable of right symbols
         and an associated semantic action.
         """
+        self.id = None
         self.left = left
         self.right = tuple(right)
         self.action = action
-        
+        self.extra = extra
+
     def __eq__(self, other):
-        return (self.left, self.right, self.action) == (other.left, other.right, other.action)
-    
+        return (self.id, self.left, self.right, self.action) == (other.id, other.left, other.right, other.action)
+
     def __hash__(self):
-        return hash((self.left, self.right, self.action))
+        return hash((self.id, self.left, self.right, self.action))
 
     def __str__(self):
         """
@@ -102,7 +104,7 @@ class Rule:
         'a' = ;
         """
         return ''.join((repr(self.left), ' = ', ', '.join(repr(symbol) for symbol in self.right), ';'))
-    
+
     def __repr__(self):
         """
         >>> print repr(Rule('a', ('b', 'c')))

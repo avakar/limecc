@@ -132,11 +132,15 @@ class Grammar:
     def nonterms(self):
         """Returns an iterable representing the set of all non-terminal symbols."""
         return self._nonterms
-        
+
     def symbols(self):
         """Returns an iterable representing the current set of all referenced symbols."""
         return self._symbols
-        
+
+    def terminals(self):
+        """Returns an iterable representing the current set of all terminal symbols."""
+        return self._symbols - self._nonterms
+
     def root(self):
         """Returns the root non-terminal.
         
