@@ -1,16 +1,53 @@
-class FaState:
+"""
+Finite automaton engine. Contains classes to represent FAs
+and algorithms to convert between DFAs, NFAs and regexes.
+
+>>> nature_fa = make_dfa_from_literal('nature')
+>>> endnature_fa = make_dfa_from_literal('endnature')
+>>> union = union_fa([nature_fa, endnature_fa])
+>>> fa = minimize_enfa(union)
+>>> len(fa.states)
+10
+"""
+
+class State:
+    """
+    A state of a finite automaton. Contains references
+    to the sets of incoming and outgoing edges.
+    """
     def __init__(self):
         self.inedges = set()
         self.outedges = set()
 
-class FaEdge:
+class Edge:
+    """
+    An edge of a finite automaton. Leads between two FA states.
+    Optionally, the edge can be labeled.
+    """
     def __init__(self, f, t, label=None):
         self.source = f
         self.target = t
         self.label = label
 
 class Fa:
+    """
+    A finite automaton consists of a set of states and a set of edges
+    that interconnect them.
+    
+    Edges can be labeled. The labels are in now way interpreted,
+    some algorithms, however, expect that the labels can be combined
+    using the standard set operators &, | and -. Furthermore,
+    epsilon edges are supposed to be labeled with None.
+
+    The FA can have zero or more initial states and zero or more accepting
+    states. The accepting states are labeled -- as with edge labels,
+    some algorithms expect accept labels to behave like sets. Accepting
+    states are stored in a dict that maps them to the corresponding label.
+    """
     def __init__(self):
+        """
+        Initialized the FA to contain no states (and thus no edges).
+        """
         self.states = []
         self.edges = set()
         self.initial = set()
@@ -31,20 +68,34 @@ class Fa:
         return '\n'.join(res)
 
     def add_fa(self, fa):
+        """
+        Adds the states and edges of another FA to this FA. The remote
+        FA should be thrown away right after the joining.
+        """
         self.states.extend(fa.states)
         self.edges.update(fa.edges)
         self.accept_labels.update(fa.accept_labels)
 
     def new_edge(self, s1, s2, label=None):
-        edge = FaEdge(s1, s2, label)
+        """
+        Joins two states with a new edge and applies an optional label
+        to it. Returns the new edge.
+        """
+        edge = Edge(s1, s2, label)
         s1.outedges.add(edge)
         s2.inedges.add(edge)
         self.edges.add(edge)
         return edge
 
     def new_state(self, templ=None):
-        new_state = FaState()
+        """
+        Creates a new state. If a template state is provided,
+        the new state is a duplicate of the template.
+        Returns the new state.
+        """
+        new_state = State()
         if templ:
+            assert templ in self.states
             old_edges = templ.inedges | templ.outedges
             for edge in old_edges:
                 source = edge.source if edge.source != templ else new_state
@@ -56,14 +107,26 @@ class Fa:
         return new_state
 
     def remove_edge(self, edge):
+        """
+        Removes an edge from the FA.
+        """
         self.edges.remove(edge)
         edge.source.outedges.remove(edge)
         edge.target.inedges.remove(edge)
 
     def get_edges(self):
+        """
+        Returns a copy of the edge set.
+        """
         return set(self.edges)
 
-def make_dfa_from_literal(lit, accept_label):
+def make_dfa_from_literal(lit, accept_label=True):
+    """
+    Create a DFA from a sequence. The FA will have `n+1` states,
+    where `n` is the length of the sequence. The states will be connected
+    to form a chain that begins with the only inital state and ends
+    with an accepting state labeled by the provided label.
+    """
     fa = Fa()
     init = fa.new_state()
     fa.initial = set([init])
@@ -74,7 +137,13 @@ def make_dfa_from_literal(lit, accept_label):
     fa.accept_labels = { init: accept_label }
     return fa
 
-def convert_enfa_to_dfa(enfa):
+def convert_enfa_to_dfa(enfa, accept_combine=min):
+    """
+    Converts an NFA with epsilon edges (labeled with None) to a DFA.
+    The function expects edge labels that are not None to be sets
+    and accepting state labels to be combinable using the accept_combine
+    function passed as a parameter.
+    """
     def _epsilon_closure(states):
         q = list(states)
         res = set(q)
@@ -117,7 +186,7 @@ def convert_enfa_to_dfa(enfa):
                     edges.setdefault(edge.target, set()).update(edge.label)
         while edges:
             it = edges.iteritems()
-            target, s = it.next()
+            target, s = next(it)
             targets = set([target])
             current_set = set(s)
             for target, next_set in it:
@@ -146,11 +215,16 @@ def convert_enfa_to_dfa(enfa):
             if state not in dfa.accept_labels:
                 dfa.accept_labels[state] = enfa_label
             else:
-                dfa.accept_labels[state] = min(dfa.accept_labels[state], enfa_label)
+                dfa.accept_labels[state] = accept_combine(dfa.accept_labels[state], enfa_label)
     return dfa
 
-def minimize_enfa(fa):
-    fa = convert_enfa_to_dfa(fa)
+def minimize_enfa(fa, accept_combine=min):
+    """
+    Converts an NFA with epsilon edges to a minimal DFA. The requirements
+    on the edge and accept labels are the same as with
+    the convert_enfa_to_dfa function.
+    """
+    fa = convert_enfa_to_dfa(fa, accept_combine)
 
     # initialize the partition by splitting the state according to the accept label
     no_accept = set()
@@ -257,3 +331,20 @@ def minimize_enfa(fa):
     for state, accept_label in fa.accept_labels.iteritems():
         new_fa.accept_labels[new_state_map[partition_map[state]]] = accept_label
     return new_fa
+
+def union_fa(fas):
+    """
+    Builds a FA that accepts a union of languages of the provided FAs.
+    """
+    final_fa = Fa()
+    final_init = final_fa.new_state()
+    final_fa.initial = set([final_init])
+    for fa in fas:
+        final_fa.add_fa(fa)
+        for init in fa.initial:
+            final_fa.new_edge(final_init, init)
+    return final_fa
+
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()

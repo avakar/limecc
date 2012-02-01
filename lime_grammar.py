@@ -318,6 +318,28 @@ def parse_lime_grammar(input):
     from lrparser import extract_second
     return p.parse(lime_lexer(input), extract_value=extract_second)
 
+def make_lime_parser(g):
+    from lrparser import Parser
+    p = Parser(g)
+
+    from fa import make_dfa_from_literal, union_fa, minimize_enfa
+    from regex_parser import (regex_parser, make_enfa_from_regex)
+    from lime_grammar import LexRegex
+
+    fas = []
+    for i, lex_rule in enumerate(g.lex_rules):
+        (lhs, lhs_name), (rhs, rhs_name), action = lex_rule
+        if isinstance(rhs, LexRegex):
+            g2 = regex_parser(rhs.regex)
+            fa = make_enfa_from_regex(g2, i)
+        else:
+            fa = make_dfa_from_literal(rhs.literal, i)
+        fas.append(fa)
+    enfa = union_fa(fas)
+    dfa = minimize_enfa(enfa)
+    p.lexer = dfa
+    return p
+
 if __name__ == "__main__":
     test = """
 ws :: discard

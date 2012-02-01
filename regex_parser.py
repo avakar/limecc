@@ -3,17 +3,18 @@ from grammar import Grammar
 from lrparser import Parser
 from docparser import parser_LR, action, matcher
 from simple_lexer import simple_lexer
-from dfa import *
+from fa import State, Edge, Fa, union_fa
 
 class _Lit:
-    def __init__(self, charset):
+    def __init__(self, charset, inv=False):
         self.charset = set(charset)
-
-    def __str__(self):
-        return str(sorted(self.charset))
+        self.inv = inv
 
     def __repr__(self):
-        return repr(sorted(self.charset))
+        if inv:
+            return '_Lit(%r, inv=True)' % (sorted(self.charset),)
+        else:
+            return '_Lit(%r)' % (sorted(self.charset),)
 
 class _Empty:
     pass
@@ -62,6 +63,16 @@ class _RegexParser:
         for elem in range_elems:
             charset.update(elem.charset)
         return _Lit(charset)
+
+    @action
+    def range_inv(self, range_elems):
+        """
+        literal = _lbracket, _circumflex, { range_elem }, _rbracket;
+        """
+        charset = set()
+        for elem in range_elems:
+            charset.update(elem.charset)
+        return _Lit(charset, inv=True)
 
     @action
     def escaped(self, esc):
@@ -163,10 +174,23 @@ def _regex_lexer(input):
             yield ('pipe', ch)
         elif ch == '?':
             yield ('q', ch)
+        elif ch == '^':
+            yield ('circumflex', ch)
         else:
             yield ('ch', ch)
     if esc:
         yield ('ch', ch)
+
+class invertible_set:
+    def __init__(self, iterable, inv=False):
+        self.base = set(iterable)
+        self.inv = inv
+
+    def __repr__(self):
+        if self.inv:
+            return 'invertible_set(%r, inv=True)' % sorted(self.base)
+        else:
+            return 'invertible_set(%r)' % sorted(self.base)
 
 def make_enfa_from_regex(regex, accept_label):
     fa = Fa()
@@ -219,31 +243,7 @@ def make_enfa_from_regex(regex, accept_label):
 
     return fa
 
-def make_multi_dfa(fas):
-    final_fa = Fa()
-    final_init = final_fa.new_state()
-    final_fa.initial = set([final_init])
-    for fa in fas:
-        final_fa.add_fa(fa)
-        final_fa.new_edge(final_init, next(iter(fa.initial)))
-    return final_fa
-
 def regex_parser(input):
     p = _RegexParser()
     from lrparser import extract_second
     return p.parse(_regex_lexer(input), extract_value=extract_second)
-
-if __name__ == "__main__":
-    fa = make_multi_dfa([
-        (r'endmodule', 0),
-        (r'module', 1),
-        (r'discipline', 2),
-        (r'enddiscipline', 3),
-        (r'nature', 4),
-        (r'endnature', 5)
-        ])
-    print fa
-    fa = minimize_enfa(fa)
-    print '-------------------------------'
-    print fa
-

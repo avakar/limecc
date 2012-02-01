@@ -1,3 +1,8 @@
+"""
+This is the main script that accepts the grammar file and generates
+the C++ header file containing the parser and potentially the lexer.
+"""
+
 def _main(options, fname):
     import os.path
     if not options.output:

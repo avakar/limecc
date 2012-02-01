@@ -8,11 +8,11 @@ and returns the list of corresponding Rule objects.
 >>> grammar_in_ebnf = 'list = { item }; item = "i";'
 >>> for rule in ebnf_parse(grammar_in_ebnf):
 ...     print rule
-list ::= @1
-@1 ::= <empty>
-@1 ::= @1 @2
-@2 ::= item
-item ::= i
+'list' = '@1';
+'@1' = ;
+'@1' = '@1', '@2';
+'@2' = 'item';
+'item' = 'i';
 
 The helper function 'parse_from_ebnf' uses 'ebnf_parse'
 to generate the list of Rule objects, constructs a grammar, a parser

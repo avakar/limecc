@@ -1,5 +1,5 @@
 from lime_grammar import LexDiscard, LexRegex
-from dfa import make_dfa_from_literal
+from fa import make_dfa_from_literal
 
 def _make_lexer(g, dfa):
     labels = []
@@ -578,28 +578,9 @@ atom(A) ::= "(" expr(E) ")".
     from lime_grammar import parse_lime_grammar
     g = parse_lime_grammar(test)
 
-#    from lrparser import Parser
-#    p = Parser(g, keep_states=True)
-
-#    from regex_parser import make_multi_dfa, minimize_enfa, regex_parser, make_enfa_from_regex
-
-#    fas = []
-#    for i, lex_rule in enumerate(g.lex_rules):
-#        (lhs, lhs_name), (rhs, rhs_name), action = lex_rule
-#        if isinstance(rhs, LexRegex):
-#            g2 = regex_parser(rhs.regex)
-#            fa = make_enfa_from_regex(g2, i)
-#        else:
-#            fa = make_dfa_from_literal(rhs.literal, i)
-#        fas.append(fa)
-#    dfa = make_multi_dfa(fas)
-#    dfa = minimize_enfa(dfa)
-#    print dfa
-
     from lime_parser import make_lime_parser
     p = make_lime_parser(g)
     print lime_cpp(p)
 
 #    import doctest
 #    doctest.testmod()
-#    print _make_lexer(g, dfa)
