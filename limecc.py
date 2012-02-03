@@ -15,10 +15,9 @@ def _main(options, fname):
         print >>sys.stderr, '%s(%d): error : %s' % (fname, line, msg)
 
     try:
-        from lime_grammar import parse_lime_grammar
+        from lime_grammar import parse_lime_grammar, make_lime_parser
         g = parse_lime_grammar(input)
 
-        from lime_parser import make_lime_parser
         from lrparser import InvalidGrammarError
         p = make_lime_parser(g)
 
