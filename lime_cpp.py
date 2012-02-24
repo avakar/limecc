@@ -23,7 +23,7 @@ def _make_lexer(g, dfa):
             label_first = len(labels)
             seq_start = seq_end = None
 
-            for ch in sorted(edge.label):
+            for ch in sorted(edge.label.charset):
                 if seq_start is None:
                     seq_start = seq_end = ch
                     continue
@@ -35,7 +35,7 @@ def _make_lexer(g, dfa):
             if seq_start is not None:
                 labels.append((seq_start, seq_end))
 
-            edges.append((label_first, len(labels), state_map[edge.target]))
+            edges.append((label_first, len(labels), state_map[edge.target], "true" if edge.label.inv else "false"))
         if state in dfa.accept_labels:
             accept_label = '&stub_%d' % dfa.accept_labels[state]
         else:
@@ -92,7 +92,7 @@ def _make_lexer(g, dfa):
 
     sd = {}
     sd['labels'] = '\n            '.join(('{ %d, %d },' % (ord(first), ord(last)) for first, last in labels ))
-    sd['edges'] = '\n            '.join(('{ %d, %d, %d },' % edge for edge in edges ))
+    sd['edges'] = '\n            '.join(('{ %d, %d, %d, %s },' % edge for edge in edges ))
     sd['states'] = '\n            '.join(('{ %d, %d, %s },' % state for state in states ))
     sd['action_stubs'] = '\n    '.join(action_stubs)
     sd['action_functions'] = '\n    '.join(action_functions)
@@ -130,11 +130,22 @@ public:
                 {
                     edge_t const & edge = edges[edge_idx];
 
-                    bool success = false;
-                    for (std::size_t i = edge.label_first; !success && i != edge.label_last; ++i)
+                    bool success = edge.invert;
+                    if (edge.invert)
                     {
-                        if (labels[i].range_first <= *first && *first <= labels[i].range_last)
-                            success = true;
+                        for (std::size_t i = edge.label_first; success && i != edge.label_last; ++i)
+                        {
+                            if (labels[i].range_first <= *first && *first <= labels[i].range_last)
+                                success = false;
+                        }
+                    }
+                    else
+                    {
+                        for (std::size_t i = edge.label_first; !success && i != edge.label_last; ++i)
+                        {
+                            if (labels[i].range_first <= *first && *first <= labels[i].range_last)
+                                success = true;
+                        }
                     }
 
                     if (success)
@@ -182,6 +193,7 @@ private:
         std::size_t label_first;
         std::size_t label_last;
         std::size_t target;
+        bool invert;
     };
 
     typedef void (*action_t)(basic_lexer &, TokenSink &);

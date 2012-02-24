@@ -3,18 +3,7 @@ from grammar import Grammar
 from lrparser import Parser
 from docparser import parser_LR, action, matcher
 from simple_lexer import simple_lexer
-from fa import State, Edge, Fa, union_fa
-
-class _Lit:
-    def __init__(self, charset, inv=False):
-        self.charset = set(charset)
-        self.inv = inv
-
-    def __repr__(self):
-        if inv:
-            return '_Lit(%r, inv=True)' % (sorted(self.charset),)
-        else:
-            return '_Lit(%r)' % (sorted(self.charset),)
+from fa import State, Edge, Fa, union_fa, _Lit
 
 class _Empty:
     pass
@@ -43,8 +32,6 @@ class _RegexParser:
 
     atom = _lparen, alt, _rparen;
     atom = literal;
-
-    ch_or_esc = ch | esc;
     """
 
     @action
@@ -78,11 +65,14 @@ class _RegexParser:
     def escaped(self, esc):
         """
         literal = esc;
+        range_elem = esc;
         """
         if esc == 'd':
             return _Lit('0123456789')
         elif esc == 's':
             return _Lit(' \n\r\t\v\f')
+        elif esc == 'n':
+            return _Lit('\n')
         elif esc == 'w':
             return _Lit('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_')
         else:
@@ -91,14 +81,14 @@ class _RegexParser:
     @action
     def range_elem_ch(self, ch):
         """
-        range_elem = ch_or_esc;
+        range_elem = ch;
         """
         return _Lit(ch)
 
     @action
     def range_elem_range(self, ch1, ch2):
         """
-        range_elem = ch_or_esc, _minus, ch_or_esc;
+        range_elem = ch, _minus, ch;
         """
         ch1 = ord(ch1)
         ch2 = ord(ch2)
@@ -237,13 +227,13 @@ def make_enfa_from_regex(regex, accept_label):
         else:
             break
 
-    for edge in fa.get_edges():
-        if edge.label is not None:
-            edge.label = frozenset(edge.label.charset)
-
     return fa
 
 def regex_parser(input):
     p = _RegexParser()
     from lrparser import extract_second
     return p.parse(_regex_lexer(input), extract_value=extract_second)
+
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()

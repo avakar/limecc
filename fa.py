@@ -10,6 +10,50 @@ and algorithms to convert between DFAs, NFAs and regexes.
 10
 """
 
+class _Lit:
+    def __init__(self, charset, inv=False):
+        self.charset = frozenset(charset)
+        self.inv = inv
+
+    def __repr__(self):
+        if self.inv:
+            return '_Lit(%r, inv=True)' % (sorted(self.charset),)
+        else:
+            return '_Lit(%r)' % (sorted(self.charset),)
+
+    def __nonzero__(self):
+        return bool(self.charset) or self.inv
+
+    def __sub__(self, other):
+        if not self.inv and not other.inv:
+            return _Lit(self.charset - other.charset, False)
+        elif self.inv and not other.inv:
+            return _Lit(self.charset | other.charset, True)
+        elif not self.inv and other.inv:
+            return _Lit(self.charset & other.charset, False)
+        else:
+            return _Lit(other.charset - self.charset, False)
+
+    def __and__(self, other):
+        if not self.inv and not other.inv:
+            return _Lit(self.charset & other.charset, False)
+        elif self.inv and not other.inv:
+            return _Lit(other.charset - self.charset, False)
+        elif not self.inv and other.inv:
+            return _Lit(self.charset - other.charset, False)
+        else:
+            return _Lit(self.charset | other.charset, True)
+
+    def __or__(self, other):
+        if not self.inv and not other.inv:
+            return _Lit(self.charset | other.charset, False)
+        elif self.inv and not other.inv:
+            return _Lit(self.charset - other.charset, True)
+        elif not self.inv and other.inv:
+            return _Lit(other.charset - self.charset, True)
+        else:
+            return _Lit(self.charset & other.charset, True)
+
 class State:
     """
     A state of a finite automaton. Contains references
@@ -132,7 +176,7 @@ def make_dfa_from_literal(lit, accept_label=True):
     fa.initial = set([init])
     for ch in lit:
         s = fa.new_state()
-        fa.new_edge(init, s, set([ch]))
+        fa.new_edge(init, s, _Lit([ch]))
         init = s
     fa.accept_labels = { init: accept_label }
     return fa
@@ -183,12 +227,15 @@ def convert_enfa_to_dfa(enfa, accept_combine=min):
         for state in state_set:
             for edge in state.outedges:
                 if edge.label is not None:
-                    edges.setdefault(edge.target, set()).update(edge.label)
+                    if edge.target not in edges:
+                        edges[edge.target] = edge.label
+                    else:
+                        edges[edge.target] &= edge.label
         while edges:
             it = edges.iteritems()
             target, s = next(it)
             targets = set([target])
-            current_set = set(s)
+            current_set = s
             for target, next_set in it:
                 s = current_set & next_set
                 if s:
@@ -246,7 +293,7 @@ def minimize_enfa(fa, accept_combine=min):
             it = item_charset_map.iteritems()
             item, charset = it.next()
             items = set([item])
-            current_charset = set(charset)
+            current_charset = charset
             for item, charset in it:
                 charset = current_charset & charset
                 if charset:
@@ -282,7 +329,7 @@ def minimize_enfa(fa, accept_combine=min):
             edge_map = {}
             for state in state_class:
                 for edge in state.outedges:
-                    edge_map[edge] = set(edge.label)
+                    edge_map[edge] = edge.label
 
             for edges, charset in _get_maximum_charsets(edge_map):
                 target_map = {}
@@ -316,13 +363,16 @@ def minimize_enfa(fa, accept_combine=min):
         edge_map = {}
         for state in state_class:
             for edge in state.outedges:
-                edge_map[edge] = set(edge.label)
+                edge_map[edge] = edge.label
 
         target_map = {}
         for edges, charset in _get_maximum_charsets(edge_map):
             target = partition_map[next(iter(edges)).target]
             assert all((partition_map[edge.target] == target for edge in edges))
-            target_map.setdefault(new_state_map[target], set()).update(charset)
+            if new_state_map[target] not in target_map:
+                target_map[new_state_map[target]] = charset
+            else:
+                target_map[new_state_map[target]] |= charset
 
         for target, charset in target_map.iteritems():
             new_fa.new_edge(source, target, charset)
