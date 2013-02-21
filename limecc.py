@@ -19,7 +19,12 @@ def _main(options, fname):
         g = parse_lime_grammar(input)
 
         from lrparser import InvalidGrammarError
-        p = make_lime_parser(g)
+        p = make_lime_parser(g, keep_states=options.print_states)
+
+        if options.print_states:
+            for i, state in enumerate(p.states):
+                print "0x%x(%d):" % (i, i)
+                print state
 
         from lime_cpp import lime_cpp
         open(options.output, 'w').write(lime_cpp(p))
@@ -34,6 +39,7 @@ if __name__ == '__main__':
     opts = OptionParser(
         usage='usage: %prog [options] filename)')
     opts.add_option('-o', '--output', help='The file to store the generated parser/lexer to')
+    opts.add_option('--print-states', action="store_true", dest="print_states", default=False, help='The file to store the generated parser/lexer to')
     (options, args) = opts.parse_args()
 
     if len(args) != 1:

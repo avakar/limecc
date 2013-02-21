@@ -318,9 +318,9 @@ def parse_lime_grammar(input):
     from lrparser import extract_second
     return p.parse(lime_lexer(input), extract_value=extract_second)
 
-def make_lime_parser(g):
+def make_lime_parser(g, **kw):
     from lrparser import Parser
-    p = Parser(g)
+    p = Parser(g, **kw)
 
     from fa import make_dfa_from_literal, union_fa, minimize_enfa
     from regex_parser import (regex_parser, make_enfa_from_regex)
