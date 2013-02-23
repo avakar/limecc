@@ -9,10 +9,11 @@ class InvalidGrammarError(Exception):
 
 class ActionConflictError(InvalidGrammarError):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
-    def __init__(self, message, relevant_state, states):
+    def __init__(self, message, relevant_state, states, g):
         InvalidGrammarError.__init__(self, message)
         self.states = states
         self.relevant_state = relevant_state
+        self.g = g
     
     def pretty_states(self):
         """Returns a string with pretty-printed itemsets."""
@@ -35,6 +36,14 @@ class ActionConflictError(InvalidGrammarError):
             state = self.states[next_id] if next_id != None else None
         
         return '\n'.join(res)
+
+    def counterexample(self):
+        trace = []
+        st = self.relevant_state
+        while st.parent_id:
+            trace.append(st.parent_symbol)
+            st = self.states[st.parent_id]
+        return reversed([self.g.token_comments.get(sym, sym) for sym in trace])
 
 class ParsingError(Exception):
     """Raised by a parser if the input word is not a sentence of the grammar."""
@@ -155,6 +164,7 @@ class Parser(object):
                     state.goto[symbol] = len(states)
                     state_map[newstate] = len(states)
                     newstate.parent_id = i
+                    newstate.parent_symbol = symbol
                     states.append(newstate)
             
             i += 1
@@ -164,7 +174,7 @@ class Parser(object):
         def add_action(state, lookahead, action, item):
             if lookahead in state.action and state.action[lookahead] != action:
                 raise ActionConflictError('LR(%d) table conflict: actions %s, %s trying to add %s'
-                    % (k, state.action[lookahead], action, item), state, states)
+                    % (k, state.action[lookahead], action, item), state, states, grammar)
             state.action[lookahead] = action
         
         for state_id, state in enumerate(states):
@@ -340,6 +350,7 @@ class State:
     def __init__(self, itemlist, grammar, first):
         self._close(itemlist, grammar, first)
         self.parent_id = None
+        self.parent_symbol = None
 
         self.goto = {}
         self.action = {}

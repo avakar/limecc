@@ -18,7 +18,7 @@ def _main(options, fname):
         from lime_grammar import parse_lime_grammar, make_lime_parser
         g = parse_lime_grammar(input)
 
-        from lrparser import InvalidGrammarError
+        from lrparser import InvalidGrammarError, ActionConflictError
         p = make_lime_parser(g, keep_states=options.print_states)
 
         if options.print_states:
@@ -28,6 +28,10 @@ def _main(options, fname):
 
         from lime_cpp import lime_cpp
         open(options.output, 'w').write(lime_cpp(p))
+    except ActionConflictError, e:
+        print e
+        print 'Counter-example:', ', '.join((str(sym) for sym in e.counterexample()))
+        return 1
     except Exception, e:
         _error(e)
         import traceback

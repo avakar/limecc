@@ -56,6 +56,9 @@ class LexLiteral:
     def __repr__(self):
         return 'LexLiteral(%r)' % self.literal
 
+    def __str__(self):
+        return repr(self.literal)
+
 class _LimeLexerClassify:
     def __init__(self):
         self.quote = None
