@@ -51,7 +51,7 @@ def _make_lexer(g, dfas, class_name):
     action_stubs = []
     action_functions = []
     for i, lex_rule in enumerate(g.lex_rules):
-        (lhs, lhs_name), (rhs, rhs_name), action = lex_rule
+        (lhs, lhs_name), (rhs, rhs_name), action, rule_pos = lex_rule
         if (rhs_name is None) != (action is None):
             raise RuntimeError('XXX 1')
         
@@ -94,6 +94,8 @@ def _make_lexer(g, dfas, class_name):
                 action,
                 '}'
                 ]
+            if rule_pos is not None:
+                action_function.insert(2, '#line %d "%s"' % (rule_pos.line, rule_pos.filename.replace('\\', '\\\\')))
             action_functions.append('\n        '.join(action_function))
 
     sd = {}
@@ -374,9 +376,11 @@ def lime_cpp(p):
                 ret_type = sym_annot[rule.left]
             else:
                 ret_type = 'void'
-            lime_actions.append("%s a%d(%s)\n{%s}\n" % (ret_type, i, ', '.join(param_list), rule.lime_action))
-#        else:
-#            lime_actions.append("void a%d(%s)\n{}\n" % (i, ', '.join(param_list)))
+            if rule.lime_action_pos:
+                line = '#line %d "%s"\n' % (rule.lime_action_pos.line, rule.lime_action_pos.filename.replace('\\', '\\\\'))
+            else:
+                line = ''
+            lime_actions.append("%s a%d(%s)\n%s{%s}\n" % (ret_type, i, ', '.join(param_list), line, rule.lime_action))
 
     def _get_action_row(lookahead):
         action_row = []

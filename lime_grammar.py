@@ -19,7 +19,7 @@ from rule import Rule
 from grammar import Grammar
 from lrparser import Parser
 from docparser import parser_LR, action, matcher
-from simple_lexer import simple_lexer
+from simple_lexer import simple_lexer, Token
 import types
 from lime_lexer import LimeLexer
 from fa import make_dfa_from_literal, union_fa, minimize_enfa
@@ -110,7 +110,12 @@ class _LimeLexerClassify:
 
 def _make_rule(lhs, lhs_name, rhs_list, rule_action):
     r = Rule(lhs, tuple((rhs for rhs, rhs_name in rhs_list)))
-    r.lime_action = rule_action
+    if rule_action is not None:
+        r.lime_action = rule_action.text()
+        r.lime_action_pos = rule_action.pos()
+    else:
+        r.lime_action = None
+        r.lime_action_pos = None
     r.lhs_name = lhs_name
     r.rhs_names = [rhs_name for rhs, rhs_name in rhs_list]
     return r
@@ -136,7 +141,7 @@ class _LimeGrammar:
     def _update_implicit_tokens(self, g):
         for lex_rhs, token_name in self.implicit_tokens.iteritems():
             if token_name not in self.processed_implicit_tokens:
-                g.lex_rules.append(((token_name, None), (lex_rhs, None), None))
+                g.lex_rules.append(((token_name, None), (lex_rhs, None), None, None))
                 g.token_comments[token_name] = lex_rhs
                 self.processed_implicit_tokens.add(token_name)
 
@@ -159,7 +164,8 @@ class _LimeGrammar:
         """
         grammar = grammar, _kw_include, snippet;
         """
-        g.user_include = incl
+        g.user_include = incl.text()
+        g.user_include_pos = incl.pos()
         return g
 
     @action
@@ -167,7 +173,8 @@ class _LimeGrammar:
         """
         grammar = grammar, _kw_token_type, snippet;
         """
-        g.token_type = token_type
+        g.token_type = token_type.text()
+        g.token_type_pos = token_type.pos()
         return g
 
     @action
@@ -211,7 +218,10 @@ class _LimeGrammar:
         lex_stmt = lex_lhs, '~=', lex_rhs;
         lex_stmt = lex_lhs, '~=', lex_rhs, snippet;
         """
-        return (lhs, rhs, action)
+        if action is None:
+            return (lhs, rhs, None, None)
+        else:
+            return (lhs, rhs, action.text(), action.pos())
 
     @action
     def lex_lhs(self, lhs, lhs_name=None):
@@ -227,7 +237,7 @@ class _LimeGrammar:
         lex_rhs = snippet;
         lex_rhs = snippet, '(', id, ')';
         """
-        return (LexRegex(rhs), rhs_name)
+        return (LexRegex(rhs.text()), rhs_name)
 
     @action
     def lex_rhs_lit(self, rhs, rhs_name=None):
@@ -242,7 +252,7 @@ class _LimeGrammar:
         """
         type_stmt = id, '::', snippet;
         """
-        return (lhs, type)
+        return (lhs, type.text())
 
     @action
     def stmt_type_void(self, lhs, type):
@@ -306,7 +316,7 @@ class _LimeGrammar:
         """
         named_item = snippet;
         """
-        snippet = snippet.strip()
+        snippet = snippet.text().strip()
         snippet = LexRegex(snippet)
         return self._lex_rhs(snippet)
 
@@ -317,22 +327,25 @@ class _LimeGrammar:
             self.implicit_tokens[rhs] = tok_name
         return [(tok_name, None)]
 
-def lime_lexer(input):
-    for tok in simple_lexer(input, _LimeLexerClassify()):
-        if isinstance(tok, tuple):
+def lime_lexer(input, filename=None):
+    for tok in simple_lexer(input, _LimeLexerClassify(), filename=filename):
+        if isinstance(tok, tuple) or isinstance(tok, Token):
             if tok[0] == 'id' and tok[1][:1] == '%':
-                yield ('kw_' + tok[1][1:], tok[1])
+                yield Token('kw_' + tok[1][1:], tok[1], tok.pos())
                 continue
             if tok[0] == 'snippet':
-                yield ('snippet', tok[1][:-1])
+                yield Token('snippet', tok[1][:-1], tok.pos())
                 continue
 
         yield tok
 
-def parse_lime_grammar(input):
+def _extract(tok):
+    return tok[1] if tok[0] != 'snippet' else tok
+
+def parse_lime_grammar(input, filename=None):
     p = _LimeGrammar()
     from lrparser import extract_second
-    return p.parse(lime_lexer(input), extract_value=extract_second)
+    return p.parse(lime_lexer(input, filename=filename), extract_value=_extract)
 
 def _lex(p, lex, text):
     g = p.grammar
@@ -356,7 +369,7 @@ def _lexparse(p, text, **kw):
 def _build_multidfa(lex_rules, allowed_syms=None):
     fas = []
     for i, lex_rule in enumerate(lex_rules):
-        (lhs, lhs_name), (rhs, rhs_name), action = lex_rule
+        (lhs, lhs_name), (rhs, rhs_name), action, pos = lex_rule
         if allowed_syms is not None and lhs not in allowed_syms:
             continue
 

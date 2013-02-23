@@ -17,6 +17,7 @@ def _main(options, fname):
     if not options.output:
         options.output = os.path.splitext(fname)[0] + '.hpp'
 
+    fname = os.path.abspath(fname)
     input = open(fname, 'r').read()
 
     import sys
@@ -24,7 +25,7 @@ def _main(options, fname):
         print >>sys.stderr, '%s(%d): error : %s' % (fname, line, msg)
 
     try:
-        g = parse_lime_grammar(input)
+        g = parse_lime_grammar(input, filename=fname)
         p = make_lime_parser(g, keep_states=options.print_states)
 
         if options.print_states:

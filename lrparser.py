@@ -3,6 +3,7 @@
 from grammar import Grammar, Rule
 from first import First
 from matchers import default_matchers
+from simple_lexer import Token
 
 class InvalidGrammarError(Exception):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
@@ -61,7 +62,7 @@ def extract_first(token):
     >>> extract_first(('item', 42))
     'item'
     """
-    return token[0] if isinstance(token, tuple) else token
+    return token[0] if isinstance(token, tuple) or isinstance(token, Token) else token
 
 def extract_second(token):
     """Returns the argument or, if it is a tuple, its second member.
@@ -71,7 +72,7 @@ def extract_second(token):
     >>> extract_first(('item', 42))
     42
     """
-    return token[1] if isinstance(token, tuple) else token
+    return token[1] if isinstance(token, tuple) or isinstance(token, Token) else token
 
 class Parser(object):
     """Represents a LR(k) parser.
@@ -287,7 +288,7 @@ class Parser(object):
                 tok = get_shift_token()
                 if shift_visitor:
                     shift_visitor(tok)
-                if tok == None:
+                if tok is None:
                     if state_id == self.accepting_state:
                         assert len(asts) == 1
                         return asts[0]
