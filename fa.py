@@ -54,6 +54,9 @@ class _Lit:
         else:
             return _Lit(self.charset & other.charset, True)
 
+    def __contains__(self, ch):
+        return self.inv != (ch in self.charset)
+
 class State:
     """
     A state of a finite automaton. Contains references

@@ -216,37 +216,54 @@ class Parser(object):
                     state.goto_match.append((matchers[symbol], next_state))
 
     def parse(self, sentence, context=None, extract=extract_first,
-            extract_value=lambda x: x, prereduce_visitor=None, postreduce_visitor=None):
+            extract_value=lambda x: x, prereduce_visitor=None, postreduce_visitor=None,
+            shift_visitor=None, state_visitor=None):
         it = iter(sentence)
-        buf = []
-        while len(buf) < self.k:
-            try:
-                buf.append(it.next())
-            except StopIteration:
-                break
-                    
-        def get_shift_token():
-            if len(buf) == 0:
+
+        lookahead = []
+        if self.k == 0:
+            def get_shift_token():
                 try:
                     return it.next()
                 except StopIteration:
                     return None
-            else:
-                res = buf.pop(0)
-                try:
-                    buf.append(it.next())
-                except StopIteration:
-                    pass
-                return res
-        
+            def update_lookahead():
+                pass
+        elif self.k == 1:
+            def get_shift_token():
+                if not lookahead:
+                    return None
+                return lookahead.pop()
+            def update_lookahead():
+                if not lookahead:
+                    try:
+                        lookahead.append(it.next())
+                    except StopIteration:
+                        pass
+        else:
+            def update_lookahead():
+                while len(lookahead) < self.k:
+                    try:
+                        lookahead.append(it.next())
+                    except StopIteration:
+                        break
+                    
+            def get_shift_token():
+                if not lookahead:
+                    return None
+                return lookahead.pop(0)
+
         stack = [0]
         asts = []
         token_counter = 0
         while True:
             state_id = stack[-1]
             state = self.states[state_id]
-            
-            key = tuple(extract(token) for token in buf)
+            if state_visitor:
+                state_visitor(state)
+
+            update_lookahead()
+            key = tuple(extract(token) for token in lookahead)
             action = state.get_action(key, token_counter)
             if action:   # reduce
                 if len(action.right) > 0:
@@ -254,7 +271,7 @@ class Parser(object):
                         prereduce_visitor(*asts[-len(action.right):])
                     new_ast = action.action(context, *asts[-len(action.right):])
                     if postreduce_visitor:
-                        postreduce_visitor(action, new_ast)
+                        new_ast = postreduce_visitor(action, new_ast)
                     del stack[-len(action.right):]
                     del asts[-len(action.right):]
                 else:
@@ -262,12 +279,14 @@ class Parser(object):
                         prereduce_visitor()
                     new_ast = action.action(context)
                     if postreduce_visitor:
-                        postreduce_visitor(action, new_ast)
+                        new_ast = postreduce_visitor(action, new_ast)
                 
                 stack.append(self.states[stack[-1]].get_next_state(action.left, token_counter))
                 asts.append(new_ast)
             else:   # shift
                 tok = get_shift_token()
+                if shift_visitor:
+                    shift_visitor(tok)
                 if tok == None:
                     if state_id == self.accepting_state:
                         assert len(asts) == 1

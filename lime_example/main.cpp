@@ -7,13 +7,10 @@ int main()
 	std::string line;
 	while (std::getline(std::cin, line))
 	{
-		lexer l;
-		parser p;
-
-		l.push_data(line.data(), line.data() + line.size(), p);
-		l.finish(p);
 		try
 		{
+			parser p;
+			p.push_data(line.data(), line.data() + line.size());
 			std::cout << p.finish() << "\n";
 		}
 		catch (...)

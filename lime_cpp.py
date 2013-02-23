@@ -1,46 +1,52 @@
 from lime_grammar import LexDiscard, LexRegex
 from fa import make_dfa_from_literal
 
-def _make_lexer(g, dfa):
-    labels = []
-    edges = []
-    states = []
+def _make_lexer(g, dfas, class_name):
+    multiedges = []
+    multistate = []
+    multilabels = []
+    for dfa_id, dfa in enumerate(dfas):
+        edges = []
+        labels = []
+        states = []
+        lstates = []
+        state_map = {}
+        for i, state in enumerate(dfa.states):
+            state_map[state] = i
+            lstates.append(state)
+        init_idx = state_map[next(iter(dfa.initial))]
+        if init_idx != 0:
+            lstates[0], lstates[init_idx] = lstates[init_idx], lstates[0]
+            state_map[lstates[0]] = 0
+            state_map[lstates[init_idx]] = init_idx
 
-    lstates = []
-    state_map = {}
-    for i, state in enumerate(dfa.states):
-        state_map[state] = i
-        lstates.append(state)
-    init_idx = state_map[next(iter(dfa.initial))]
-    if init_idx != 0:
-        lstates[0], lstates[init_idx] = lstates[init_idx], lstates[0]
-        state_map[lstates[0]] = 0
-        state_map[lstates[init_idx]] = init_idx
+        for state in lstates:
+            edge_first = len(edges)
+            for edge in state.outedges:
+                label_first = len(labels)
+                seq_start = seq_end = None
 
-    for state in lstates:
-        edge_first = len(edges)
-        for edge in state.outedges:
-            label_first = len(labels)
-            seq_start = seq_end = None
-
-            for ch in sorted(edge.label.charset):
-                if seq_start is None:
-                    seq_start = seq_end = ch
-                    continue
-                if ord(seq_end) + 1 != ord(ch):
+                for ch in sorted(edge.label.charset):
+                    if seq_start is None:
+                        seq_start = seq_end = ch
+                        continue
+                    if ord(seq_end) + 1 != ord(ch):
+                        labels.append((seq_start, seq_end))
+                        seq_start = seq_end = ch
+                    else:
+                        seq_end = ch
+                if seq_start is not None:
                     labels.append((seq_start, seq_end))
-                    seq_start = seq_end = ch
-                else:
-                    seq_end = ch
-            if seq_start is not None:
-                labels.append((seq_start, seq_end))
 
-            edges.append((label_first, len(labels), state_map[edge.target], "true" if edge.label.inv else "false"))
-        if state in dfa.accept_labels:
-            accept_label = '&stub_%d' % dfa.accept_labels[state]
-        else:
-            accept_label = '0'
-        states.append((edge_first, len(edges), accept_label))
+                edges.append((label_first, len(labels), state_map[edge.target], "true" if edge.label.inv else "false"))
+            if state in dfa.accept_labels:
+                accept_label = '&stub_%d' % dfa.accept_labels[state]
+            else:
+                accept_label = '0'
+            states.append((edge_first, len(edges), accept_label))
+        multistate.append(states)
+        multilabels.append(labels)
+        multiedges.append(edges)
 
     action_stubs = []
     action_functions = []
@@ -49,13 +55,13 @@ def _make_lexer(g, dfa):
         if (rhs_name is None) != (action is None):
             raise RuntimeError('XXX 1')
         
-        action_stub = ['static void stub_%s(basic_lexer & l, TokenSink & token_sink)' % i, '{']
+        action_stub = ['static void stub_%s(%s & l)' % (i, class_name), '{']
         if not isinstance(g.sym_annot.get(lhs), LexDiscard):
             if action is None:
                 if g.sym_annot.get(lhs) is None:
-                    action_stub.append('    token_sink.push_token(tok::%s);' % lhs.lower())
+                    action_stub.append('    l.push_token(tok::%s);' % lhs.lower())
                 else:
-                    action_stub.append('    token_sink.push_token(tok::%s, (%s)l.m_token);'
+                    action_stub.append('    l.push_token(tok::%s, (%s)l.m_token);'
                         % (lhs.lower(), g.sym_annot[lhs]))
             else:
                 action_stub.append('    %s res;' % g.sym_annot[lhs])
@@ -66,10 +72,10 @@ def _make_lexer(g, dfa):
                     params.append('l.m_token')
                 params = ', '.join(params)
                 if lhs_name is not None:
-                    action_stub.append('    l.m_actions.action_%d(%s);' % (i, params))
+                    action_stub.append('    l.m_lex_actions.action_%d(%s);' % (i, params))
                 else:
-                    action_stub.append('    res = l.m_actions.action_%d(%s);' % (i, params))
-                action_stub.append('    token_sink.push_token(tok::%s, res);' % lhs.lower())
+                    action_stub.append('    res = l.m_lex_actions.action_%d(%s);' % (i, params))
+                action_stub.append('    l.push_token(tok::%s, res);' % lhs.lower())
         action_stub.append('}')
         action_stubs.append('\n    '.join(action_stub))
 
@@ -91,51 +97,60 @@ def _make_lexer(g, dfa):
             action_functions.append('\n        '.join(action_function))
 
     sd = {}
-    sd['labels'] = '\n            '.join(('{ %d, %d },' % (ord(first), ord(last)) for first, last in labels ))
-    sd['edges'] = '\n            '.join(('{ %d, %d, %d, %s },' % edge for edge in edges ))
-    sd['states'] = '\n            '.join(('{ %d, %d, %s },' % state for state in states ))
+
+    arrays = ["static label_t const labels_%d[] = { %s };" % (i, ''.join(('{ %d, %d },' % (ord(first), ord(last)) for first, last in labels))) for i, labels in enumerate(multilabels)]
+    arrays.append("static label_t const * const labels[] = { %s };" % ', '.join(("labels_%d" % i for i in xrange(len(multilabels)))))
+    sd['labels'] = '\n        '.join(arrays)
+
+    arrays = ["static edge_t const edges_%d[] = { %s };" % (i, ''.join(('{ %d, %d, %d, %s },' % edge for edge in edges ))) for i, edges in enumerate(multiedges)]
+    arrays.append("static edge_t const * const edges[] = { %s };" % ', '.join(("edges_%d" % i for i in xrange(len(multiedges)))))
+    sd['edges'] = '\n        '.join(arrays)
+
+    arrays = ["static lex_state_t const states_%d[] = { %s };" % (i, ''.join(('{ %d, %d, %s },' % state for state in states ))) for i, states in enumerate(multistate)]
+    arrays.append("static lex_state_t const * const states[] = { %s };" % ', '.join(("states_%d" % i for i in xrange(len(multiedges)))))
+    sd['states'] = '\n        '.join(arrays)
+
     sd['action_stubs'] = '\n    '.join(action_stubs)
     sd['action_functions'] = '\n    '.join(action_functions)
-    return lex_templ.substitute(sd)
+    sd['class_name'] = class_name
 
-lex_templ = """\
-template <typename TokenSink>
-class basic_lexer
-{
-public:
-    basic_lexer()
-        : m_state(0)
-    {
+    return {
+        'lexer_public': lex_templ_public.substitute(sd),
+        'lexer_private': lex_templ_private.substitute(sd),
+        'lexer_ctor_init': ': m_lex_state(0)',
+        'lexer_ctor': '        this->set_dfa(0);',
     }
 
-    void push_data(char const * first, char const * last, TokenSink & token_sink)
+lex_templ_public = """\
+    void set_dfa(std::size_t n)
     {
-        static label_t const labels[] = {
-            $labels
-        };
+        m_dfa = n;
+    }
 
-        static edge_t const edges[] = {
-            $edges
-        };
+    void push_data(char const * first, char const * last)
+    {
+        $labels
+
+        $edges
 
         for (; first != last; ++first)
         {
             bool target_state_found = false;
             while (!target_state_found)
             {
-                state_t const & state = this->get_state();
+                lex_state_t const & state = this->get_state();
                 for (std::size_t edge_idx = state.edge_first;
                     !target_state_found && edge_idx != state.edge_last;
                     ++edge_idx)
                 {
-                    edge_t const & edge = edges[edge_idx];
+                    edge_t const & edge = edges[m_dfa][edge_idx];
 
                     bool success = edge.invert;
                     if (edge.invert)
                     {
                         for (std::size_t i = edge.label_first; success && i != edge.label_last; ++i)
                         {
-                            if (labels[i].range_first <= *first && *first <= labels[i].range_last)
+                            if (labels[m_dfa][i].range_first <= *first && *first <= labels[m_dfa][i].range_last)
                                 success = false;
                         }
                     }
@@ -143,29 +158,29 @@ public:
                     {
                         for (std::size_t i = edge.label_first; !success && i != edge.label_last; ++i)
                         {
-                            if (labels[i].range_first <= *first && *first <= labels[i].range_last)
+                            if (labels[m_dfa][i].range_first <= *first && *first <= labels[m_dfa][i].range_last)
                                 success = true;
                         }
                     }
 
                     if (success)
                     {
-                        m_state = edge.target;
+                        m_lex_state = edge.target;
                         target_state_found = true;
                     }
                 }
 
                 if (!target_state_found)
                 {
-                    if (m_state == 0)
+                    if (m_lex_state == 0)
                     {
                         target_state_found = true;
                     }
                     else
                     {
-                        this->dispatch_actions(token_sink);
+                        this->dispatch_actions();
                         m_token.clear();
-                        m_state = 0;
+                        m_lex_state = 0;
                     }
                 }
                 else
@@ -176,12 +191,13 @@ public:
         }
     }
 
-    void finish(TokenSink & token_sink)
+    void lex_finish()
     {
-        this->dispatch_actions(token_sink);
+        this->dispatch_actions();
     }
+"""
 
-private:
+lex_templ_private = """
     struct label_t
     {
         char range_first;
@@ -196,29 +212,27 @@ private:
         bool invert;
     };
 
-    typedef void (*action_t)(basic_lexer &, TokenSink &);
+    typedef void (*action_t)($class_name &);
 
-    struct state_t
+    struct lex_state_t
     {
         std::size_t edge_first;
         std::size_t edge_last;
         action_t accept;
     };
 
-    state_t const & get_state() const
+    lex_state_t const & get_state() const
     {
-        static state_t const states[] = {
-            $states
-        };
+        $states
 
-        return states[m_state];
+        return states[m_dfa][m_lex_state];
     }
 
-    void dispatch_actions(TokenSink & token_sink)
+    void dispatch_actions()
     {
-        state_t const & state = this->get_state();
+        lex_state_t const & state = this->get_state();
         if (state.accept != 0)
-            state.accept(*this, token_sink);
+            state.accept(*this);
     }
 
     $action_stubs
@@ -228,15 +242,14 @@ private:
         $action_functions
     };
 
-    actions_t m_actions;
-    std::size_t m_state;
+    actions_t m_lex_actions;
+    std::size_t m_dfa;
+    std::size_t m_lex_state;
     std::string m_token;
-};
 """
 
 def lime_cpp(p):
     g = p.grammar
-    dfa = p.lexer
 
     sym_annot = dict(g.sym_annot.iteritems())
     for sym in g.symbols():
@@ -419,34 +432,47 @@ def lime_cpp(p):
         finish_function = '''\
     root_type & finish()
     {
+        this->lex_finish(); // XXX: only when we have lexer
         this->do_reduce(tok::eof);
         if (m_state_stack.size() == 2 && %s.size() == 1)
             return %s[0];
         else
-            throw std::runtime_error("TODO");
+            throw std::runtime_error("Unexpected end of file");
     }
 ''' % (root_stack, root_stack)
     else:
         finish_function = '''\
     void finish()
     {
+        this->lex_finish(); // XXX: only when we have lexer
         this->do_reduce(tok::eof);
+        if (m_state_stack.size() != 2)
+            throw std::runtime_error("Unexpected end of file");
     }
 '''
 
     sd = {}
 
+    class_name = 'parser'
     if g.lex_rules:
-        sd['lexer'] = _make_lexer(g, dfa)
-        sd['lexer_typedef'] = 'typedef basic_lexer<parser> lexer;'
+        if not p.grammar.context_lexer:
+            sd.update(_make_lexer(g, [p.lexer], class_name))
+        else:
+            sd.update(_make_lexer(g, p.lexers, class_name))
+            
     else:
-        sd['lexer'] = ''
-        sd['lexer_typedef'] = ''
+        sd['lexer_public'] = ''
+        sd['lexer_private'] = ''
 
     if root_type is not None:
         sd['root_typedef'] = 'typedef %s root_type;' % root_type
     else:
         sd['root_typedef'] = ''
+
+    if g.context_lexer:
+        sd['set_dfa'] = "static std::size_t const next_dfa[] = { %s };\n        this->set_dfa(next_dfa[new_state]);" % ', '.join((str(state.lexer_id) for state in p.states))
+    else:
+        sd['set_dfa'] = ''
 
     sd['user_include'] = '' if g.user_include is None else g.user_include
     sd['finish_function'] = finish_function
@@ -465,6 +491,7 @@ def lime_cpp(p):
     sd['term_goto_table'] = ' },\n            { '.join(
         [', '.join([('%d' % item) for item in row]) for row in term_goto_table])
     sd['push_token_functions'] = '\n    '.join(push_token_lines)
+    sd['class_name'] = class_name
     return templ.substitute(sd)
 
 templ = """\
@@ -485,16 +512,16 @@ enum token_kind {
 
 }
 
-$lexer
-
-class parser
+class $class_name
 {
 public:
     typedef int state_t;
     $root_typedef
 
-    parser()
+    $class_name()
+        $lexer_ctor_init
     {
+$lexer_ctor
         m_state_stack.push_back(0);
     }
 
@@ -502,8 +529,10 @@ public:
 
 $finish_function
 
+$lexer_public
+
 private:
-    typedef parser self_type;
+    typedef $class_name self_type;
 
     void do_shift(tok::token_kind kind)
     {
@@ -514,6 +543,8 @@ private:
         if (new_state == 0)
             throw std::runtime_error("Unexpected token");
         m_state_stack.push_back(new_state);
+
+        $set_dfa
     }
 
     void do_reduce(tok::token_kind lookahead)
@@ -549,16 +580,17 @@ private:
     std::vector<state_t> m_state_stack;
     $ast_stacks
     actions m_actions;
-};
 
-$lexer_typedef
+$lexer_private
+};
 
 #endif // PARSER
 """
 
 from string import Template
 templ = Template(templ)
-lex_templ = Template(lex_templ)
+lex_templ_public = Template(lex_templ_public)
+lex_templ_private = Template(lex_templ_private)
 
 if __name__ == "__main__":
     test = """

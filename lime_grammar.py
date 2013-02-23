@@ -20,6 +20,10 @@ from grammar import Grammar
 from lrparser import Parser
 from docparser import parser_LR, action, matcher
 from simple_lexer import simple_lexer
+import types
+from lime_lexer import LimeLexer
+from fa import make_dfa_from_literal, union_fa, minimize_enfa
+from regex_parser import (regex_parser, make_enfa_from_regex)
 
 class LexDiscard:
     pass
@@ -142,6 +146,7 @@ class _LimeGrammar:
         grammar = ;
         """
         g = Grammar()
+        g.context_lexer = False
         g.lex_rules = []
         g.sym_annot = {}
         g.token_comments = {}
@@ -163,6 +168,14 @@ class _LimeGrammar:
         grammar = grammar, _kw_token_type, snippet;
         """
         g.token_type = token_type
+        return g
+
+    @action
+    def grammar_kw_context_lexer(self, g):
+        """
+        grammar = grammar, _kw_context_lexer;
+        """
+        g.context_lexer = True
         return g
 
     @action
@@ -321,17 +334,32 @@ def parse_lime_grammar(input):
     from lrparser import extract_second
     return p.parse(lime_lexer(input), extract_value=extract_second)
 
-def make_lime_parser(g, **kw):
-    from lrparser import Parser
-    p = Parser(g, **kw)
+def _lex(p, lex, text):
+    g = p.grammar
+    for tok, tok_id in lex.tokens(text):
+        tok_id = g.lex_rules[tok_id][0][0]
+        annot = g.sym_annot.get(tok_id)
+        if isinstance(annot, LexDiscard):
+            continue
+        yield (tok_id, tok)
 
-    from fa import make_dfa_from_literal, union_fa, minimize_enfa
-    from regex_parser import (regex_parser, make_enfa_from_regex)
-    from lime_grammar import LexRegex
+def _lexparse(p, text, **kw):
+    if not p.grammar.context_lexer:
+        lex = LimeLexer(p.lexer)
+        return p.parse(_lex(p, lex, text), **kw)
+    else:
+        lex = LimeLexer(p.states[0].lexer)
+        def update_lex(state):
+            lex.set_dfa(state.lexer)
+        return p.parse(_lex(p, lex, text), state_visitor=update_lex, **kw)
 
+def _build_multidfa(lex_rules, allowed_syms=None):
     fas = []
-    for i, lex_rule in enumerate(g.lex_rules):
+    for i, lex_rule in enumerate(lex_rules):
         (lhs, lhs_name), (rhs, rhs_name), action = lex_rule
+        if allowed_syms is not None and lhs not in allowed_syms:
+            continue
+
         if isinstance(rhs, LexRegex):
             g2 = regex_parser(rhs.regex)
             fa = make_enfa_from_regex(g2, i)
@@ -339,8 +367,39 @@ def make_lime_parser(g, **kw):
             fa = make_dfa_from_literal(rhs.literal, i)
         fas.append(fa)
     enfa = union_fa(fas)
-    dfa = minimize_enfa(enfa)
-    p.lexer = dfa
+    return minimize_enfa(enfa)
+
+def make_lime_parser(g, **kw):
+    from lrparser import Parser
+    p = Parser(g, **kw)
+
+    g = p.grammar
+    if g.context_lexer:
+        # Discard tokens are always enabled
+        discard_terms = set((term for term in g.terminals() if isinstance(g.sym_annot.get(term), LexDiscard)))
+
+        # Walk the goto/action tables and determine the list of possible tokens for each state
+        lex_map = {}
+        term_lists = []
+        for state in p.states:
+            terms = set((sym for sym in state.goto if sym in g.terminals())) | discard_terms
+            for lookahead in state.action:
+                terms |= set(lookahead)
+            terms = frozenset(terms)
+            if terms not in lex_map:
+                lex_map[terms] = len(term_lists)
+                state.lexer_id = len(term_lists)
+                term_lists.append(terms)
+            else:
+                state.lexer_id = lex_map[terms]
+
+        p.lexers = [_build_multidfa(g.lex_rules, set(term_list)) for term_list in term_lists]
+        for state in p.states:
+            state.lexer = p.lexers[state.lexer_id]
+    else:
+        p.lexer = _build_multidfa(g.lex_rules)
+
+    p.lexparse = types.MethodType(_lexparse, p)
     return p
 
 if __name__ == "__main__":
