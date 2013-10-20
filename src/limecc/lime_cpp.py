@@ -1,5 +1,5 @@
-from parsers.lime_grammar import LexDiscard, LexRegex
-from parsers.fa import make_dfa_from_literal
+from lime_grammar import LexDiscard, LexRegex
+from fa import make_dfa_from_literal
 
 def _make_lexer(g, dfas, class_name):
     multiedges = []

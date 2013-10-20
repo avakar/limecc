@@ -16,12 +16,13 @@ the corresponding Rule object.
 """
 
 from grammar import Rule, Grammar
-from parsers import Parser, simple_lexer, Token
-from parsers.docparser import parser_LR, action, matcher
+from lrparser import Parser
+from simple_lexer import simple_lexer, Token
+from docparser import parser_LR, action, matcher
 import types
 from lime_lexer import LimeLexer
-from parsers.fa import make_dfa_from_literal, union_fa, minimize_enfa
-from parsers.regex_parser import (regex_parser, make_enfa_from_regex)
+from fa import make_dfa_from_literal, union_fa, minimize_enfa
+from regex_parser import (regex_parser, make_enfa_from_regex)
 
 class LexDiscard:
     pass
@@ -342,7 +343,7 @@ def _extract(tok):
 
 def parse_lime_grammar(input, filename=None):
     p = _LimeGrammar()
-    from parsers.lrparser import extract_second
+    from lrparser import extract_second
     return p.parse(lime_lexer(input, filename=filename), extract_value=_extract)
 
 def _lex(p, lex, text):
@@ -381,7 +382,7 @@ def _build_multidfa(lex_rules, allowed_syms=None):
     return minimize_enfa(enfa)
 
 def make_lime_parser(g, **kw):
-    from parsers import Parser
+    from lrparser import Parser
     p = Parser(g, **kw)
 
     g = p.grammar
