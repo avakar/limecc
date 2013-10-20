@@ -3,8 +3,8 @@ This is the main script that accepts the grammar file and generates
 the C++ header file containing the parser and potentially the lexer.
 """
 
-from lime_grammar import parse_lime_grammar, make_lime_parser
-from lrparser import InvalidGrammarError, ActionConflictError
+from parsers.lime_grammar import parse_lime_grammar, make_lime_parser
+from parsers.lrparser import InvalidGrammarError, ActionConflictError
 
 def print_shift(tok):
     print 'shift:', tok
@@ -34,7 +34,7 @@ def _main(options, fname):
                 print state
 
         if not options.parse:
-            from lime_cpp import lime_cpp
+            from generators.lime_cpp import lime_cpp
             open(options.output, 'w').write(lime_cpp(p))
         else:
             print p.lexparse(options.parse, shift_visitor=print_shift, postreduce_visitor=print_reduce)
