@@ -3,3 +3,6 @@ Debug
 Release
 **.user
 **.suo
+**.sdf
+dist
+**.egg-info
