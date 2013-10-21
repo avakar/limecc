@@ -1,12 +1,12 @@
 The limecc parser generator
 ===========================
 
-limecc is a lexer and parser generator similar to other tools like cyacc, bison and especially [lemon][1] from which limecc sources inspiration. Grammars are written in a language called Lime, which describes lexical tokens, grammar productions, and sematic actions. The generator produces C++ code for the corresponding lexer and parser.
+limecc is a lexer and parser generator similar to other tools like yacc, bison and especially [lemon][1] from which limecc sources inspiration. Grammars are written in a language called Lime, which describes lexical tokens, grammar productions, and sematic actions. The generator produces C++ code for the corresponding lexer and parser.
 
 Installation
 ------------
 
-Since limecc is written in pure Python, you can just simply fetch it from PyPI.
+Since limecc is written in pure Python, you can simply fetch it from PyPI.
 
     easy_install limecc
 
@@ -53,7 +53,7 @@ You can compile the above grammar as follows.
 
     limecc calc.y
 
-This command will produce `calc.hpp`, a C++ file the `parser` class. Use the class as follows.
+This command will produce `calc.hpp`, a C++ file containing the `parser` class. Use the class as follows.
 
     #include "calc.hpp"
     #include <iostream>
