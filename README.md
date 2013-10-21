@@ -13,7 +13,7 @@ Since limecc is written in pure Python, you can simply fetch it from PyPI.
 Usage example
 -------------
 
-The Lime language was designed to be concise, yet self-descriptive. The following grammar description produces a simple calculator.
+The [Lime language][2] was designed to be concise, yet self-descriptive. The following grammar description produces a simple calculator.
 
     WS :: discard
     WS ~= {\s+}
@@ -78,4 +78,4 @@ This command will produce `calc.hpp`, a C++ file containing the `parser` class. 
     }
 
   [1]: http://www.sqlite.org/src/doc/trunk/doc/lemon.html
-  [2]: ./docs/grammar.md
+  [2]: ./docs/lime_language.md
