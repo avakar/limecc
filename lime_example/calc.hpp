@@ -65,10 +65,10 @@ public:
 
     void push_data(char const * first, char const * last)
     {
-        static label_t const labels_0[] = { { 42, 42 },{ 41, 41 },{ 48, 57 },{ 43, 43 },{ 40, 40 },{ 9, 13 },{ 32, 32 },{ 47, 47 },{ 45, 45 },{ 9, 13 },{ 32, 32 },{ 48, 57 }, };
+        static label_t const labels_0[] = { { 47, 47 },{ 45, 45 },{ 48, 57 },{ 41, 41 },{ 43, 43 },{ 42, 42 },{ 9, 13 },{ 32, 32 },{ 40, 40 },{ 48, 57 },{ 9, 13 },{ 32, 32 }, };
         static label_t const * const labels[] = { labels_0 };
 
-        static edge_t const edges_0[] = { { 0, 1, 4, false },{ 1, 2, 3, false },{ 2, 3, 8, false },{ 3, 4, 7, false },{ 4, 5, 5, false },{ 5, 7, 2, false },{ 7, 8, 1, false },{ 8, 9, 6, false },{ 9, 11, 2, false },{ 11, 12, 8, false }, };
+        static edge_t const edges_0[] = { { 0, 1, 8, false },{ 1, 2, 7, false },{ 2, 3, 3, false },{ 3, 4, 2, false },{ 4, 5, 6, false },{ 5, 6, 1, false },{ 6, 8, 4, false },{ 8, 9, 5, false },{ 9, 10, 3, false },{ 10, 12, 4, false }, };
         static edge_t const * const edges[] = { edges_0 };
 
         for (; first != last; ++first)
@@ -301,18 +301,23 @@ private:
     struct actions
     {
         void a1(double & E, double & E1, double & E2)
+#line 8 "C:\\devel\\checkouts\\limecc\\lime_example\\calc.y"
 { E = E1 + E2; }
 
 void a2(double & E, double & E1, double & E2)
+#line 9 "C:\\devel\\checkouts\\limecc\\lime_example\\calc.y"
 { E = E1 - E2; }
 
 void a4(double & E, double & E1, double & E2)
+#line 13 "C:\\devel\\checkouts\\limecc\\lime_example\\calc.y"
 { E = E1 * E2; }
 
 void a5(double & E, double & E1, double & E2)
+#line 14 "C:\\devel\\checkouts\\limecc\\lime_example\\calc.y"
 { E = E1 / E2; }
 
 void a8(double & A, double & E)
+#line 19 "C:\\devel\\checkouts\\limecc\\lime_example\\calc.y"
 { A = -E; }
 
     };
@@ -347,7 +352,7 @@ void a8(double & A, double & E)
 
     lex_state_t const & get_state() const
     {
-        static lex_state_t const states_0[] = { { 0, 8, 0 },{ 8, 8, &stub_5 },{ 8, 9, &stub_0 },{ 9, 9, &stub_6 },{ 9, 9, &stub_4 },{ 9, 9, &stub_7 },{ 9, 9, &stub_3 },{ 9, 9, &stub_2 },{ 9, 10, &stub_1 }, };
+        static lex_state_t const states_0[] = { { 0, 8, 0 },{ 8, 8, &stub_4 },{ 8, 8, &stub_6 },{ 8, 9, &stub_1 },{ 9, 10, &stub_0 },{ 10, 10, &stub_7 },{ 10, 10, &stub_2 },{ 10, 10, &stub_3 },{ 10, 10, &stub_5 }, };
         static lex_state_t const * const states[] = { states_0 };
 
         return states[m_dfa][m_lex_state];
@@ -398,6 +403,7 @@ void a8(double & A, double & E)
     {
         double action_1(std::string & x)
         {
+        #line 4 "C:\\devel\\checkouts\\limecc\\lime_example\\calc.y"
          return atoi(x.c_str()); 
         }
     };

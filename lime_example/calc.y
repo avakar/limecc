@@ -15,9 +15,9 @@ mul(E) ::= mul(E1) "/" term(E2). { E = E1 / E2; }
 
 term :: {double}
 term ::= atom.
-term(A) ::= "+" atom(E).
+term ::= "+" atom.
 term(A) ::= "-" atom(E). { A = -E; }
 
 atom :: {double}
-atom(A) ::= NUM(B).
+atom ::= NUM.
 atom(A) ::= "(" expr(E) ")".

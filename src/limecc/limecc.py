@@ -36,9 +36,6 @@ def _main():
     fname = os.path.abspath(fname)
     input = open(fname, 'r').read()
 
-    def _error(msg, line=1):
-        print >>sys.stderr, '%s(%d): error : %s' % (fname, line, msg)
-
     try:
         g = parse_lime_grammar(input, filename=fname)
         p = make_lime_parser(g, keep_states=options.print_states)
@@ -58,7 +55,7 @@ def _main():
         print 'Counter-example:', ', '.join((str(sym) for sym in e.counterexample()))
         return 1
     except Exception, e:
-        _error(e)
+        print >>sys.stderr, '%s(%d): error : %s' % (fname, line, msg)
         import traceback
         traceback.print_exc(sys.stderr)
         return 1
