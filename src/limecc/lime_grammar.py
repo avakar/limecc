@@ -18,8 +18,7 @@ the corresponding Rule object.
 from grammar import Rule, Grammar
 from lrparser import Parser
 from simple_lexer import simple_lexer, Token
-from docparser import parser_LR, action, matcher
-import types
+import types, sys
 from lime_lexer import LimeLexer
 from fa import make_dfa_from_literal, union_fa, minimize_enfa
 from regex_parser import (regex_parser, make_enfa_from_regex)
@@ -75,7 +74,7 @@ class _LimeLexerClassify:
                 self.snippet -= 1
             elif ch == '{':
                 self.snippet += 1
-            return 'snippet'
+            return 'SNIPPET'
 
         if self.comment:
             if ch == '\n':
@@ -86,7 +85,7 @@ class _LimeLexerClassify:
             self.quote = None
             return
         if self.quote:
-            return 'ql'
+            return 'QL'
         if ch in '\'"':
             self.quote = ch
             return
@@ -103,13 +102,16 @@ class _LimeLexerClassify:
             return
 
         if ch.isalnum() or ch in '_-%':
-            return 'id'
+            return 'ID'
+
+        if ch in '~:=.':
+            return 'op'
 
         return ''
 
 def _make_rule(lhs, lhs_name, rhs_list, rule_action):
     r = Rule(lhs, tuple((rhs for rhs, rhs_name in rhs_list)))
-    if rule_action is not None:
+    if rule_action != ():
         r.lime_action = rule_action.text()
         r.lime_action_pos = rule_action.pos()
     else:
@@ -119,36 +121,25 @@ def _make_rule(lhs, lhs_name, rhs_list, rule_action):
     r.rhs_names = [rhs_name for rhs, rhs_name in rhs_list]
     return r
 
-@parser_LR(1)
-class _LimeGrammar:
-    """
-    rule_action = ;
-    rule_action = snippet;
-    """
-
+class LimeGrammar:
     def __init__(self):
-        self.implicit_tokens = {}
-        self.processed_implicit_tokens = set()
+        self._implicit_tokens = {}
+        self._processed_implicit_tokens = set()
+        self._parser = None
 
-    @action
-    def root(self, g):
-        """
-        root = grammar;
-        """
-        return g
+    def parse(self, *args, **kw):
+        if self._parser is None:
+            self._parser = Parser(self.grammar)
+        return self._parser.parse(*args, context=self, **kw)
 
     def _update_implicit_tokens(self, g):
-        for lex_rhs, token_name in self.implicit_tokens.iteritems():
-            if token_name not in self.processed_implicit_tokens:
+        for lex_rhs, token_name in self._implicit_tokens.iteritems():
+            if token_name not in self._processed_implicit_tokens:
                 g.lex_rules.append(((token_name, None), (lex_rhs, None), None, None))
                 g.token_comments[token_name] = lex_rhs
-                self.processed_implicit_tokens.add(token_name)
+                self._processed_implicit_tokens.add(token_name)
 
-    @action
-    def grammar_empty(self):
-        """
-        grammar = ;
-        """
+    def _grammar_empty(self):
         g = Grammar()
         g.context_lexer = False
         g.lex_rules = []
@@ -158,191 +149,149 @@ class _LimeGrammar:
         g.token_type = None # XXX: perhaps default_type?
         return g
 
-    @action
-    def grammar_kw_user_include(self, g, incl):
-        """
-        grammar = grammar, _kw_include, snippet;
-        """
+    def _grammar_kw_user_include(self, g, _kw, incl):
         g.user_include = incl.text()
         g.user_include_pos = incl.pos()
         return g
 
-    @action
-    def grammar_kw_token_type(self, g, token_type):
-        """
-        grammar = grammar, _kw_token_type, snippet;
-        """
+    def _grammar_kw_token_type(self, g, _kw, token_type):
         g.token_type = token_type.text()
         g.token_type_pos = token_type.pos()
         return g
 
-    @action
-    def grammar_kw_context_lexer(self, g):
-        """
-        grammar = grammar, _kw_context_lexer;
-        """
+    def _grammar_kw_context_lexer(self, g, _kw):
         g.context_lexer = True
         return g
 
-    @action
-    def grammar_type(self, g, type):
-        """
-        grammar = grammar, type_stmt;
-        """
+    def _grammar_type(self, g, type):
         g.sym_annot[type[0]] = type[1]
         return g
 
-    @action
-    def grammar_rule(self, g, rule):
-        """
-        grammar = grammar, rule_stmt;
-        """
+    def _grammar_rule(self, g, rule):
         rule.id = len(g)
         g.add(rule)
         self._update_implicit_tokens(g)
         return g
 
-    @action
-    def grammar_lex(self, g, rule):
-        """
-        grammar = grammar, lex_stmt;
-        """
+    def _grammar_lex(self, g, rule):
         g.lex_rules.append(rule)
         g.add_symbol(rule[0][0])
         return g
 
-    @action
-    def lex_stmt(self, lhs, rhs, action=None):
-        """
-        lex_stmt = lex_lhs, '~=', lex_rhs;
-        lex_stmt = lex_lhs, '~=', lex_rhs, snippet;
-        """
-        if action is None:
-            return (lhs, rhs, None, None)
-        else:
-            return (lhs, rhs, action.text(), action.pos())
+    def _lex_stmt(self, lhs, _eq, rhs):
+        return (lhs, rhs, None, None)
+    def _lex_stmt_with_action(self, lhs, _eq, rhs, action):
+        return (lhs, rhs, action.text(), action.pos())
 
-    @action
-    def lex_lhs(self, lhs, lhs_name=None):
-        """
-        lex_lhs = id;
-        lex_lhs = id, '(', id, ')';
-        """
+    def _lex_lhs(self, lhs):
+        return (lhs, None)
+    def _lex_lhs_with_name(self, lhs, _lparen, lhs_name, _rparen):
         return (lhs, lhs_name)
 
-    @action
-    def lex_rhs(self, rhs, rhs_name=None):
-        """
-        lex_rhs = snippet;
-        lex_rhs = snippet, '(', id, ')';
-        """
+    def _lex_rhs_snip(self, rhs):
+        return (LexRegex(rhs.text()), None)
+    def _lex_rhs_snip_with_name(self, rhs, _lparen, rhs_name, _rparen):
         return (LexRegex(rhs.text()), rhs_name)
 
-    @action
-    def lex_rhs_lit(self, rhs, rhs_name=None):
-        """
-        lex_rhs = ql;
-        lex_rhs = ql, '(', id, ')';
-        """
+    def _lex_rhs_lit(self, rhs):
+        return (LexLiteral(rhs), None)
+    def _lex_rhs_lit_with_name(self, rhs, _lparen, rhs_name, _rparen):
         return (LexLiteral(rhs), rhs_name)
 
-    @action
-    def stmt_type(self, lhs, type):
-        """
-        type_stmt = id, '::', snippet;
-        """
+    def _stmt_type(self, lhs, _cc, type):
         return (lhs, type.text())
 
-    @action
-    def stmt_type_void(self, lhs, type):
-        """
-        type_stmt = id, '::', id;
-        """
+    def _stmt_type_void(self, lhs, _cc, type):
         if type == 'discard':
             return lhs, LexDiscard()
         if type == 'void':
             return (lhs, None)
         raise RuntimeError("Expected 'void', 'discard' or a snippet.");
 
-    @action
-    def stmt_rule(self, lhs, rhs_list, action):
-        """
-        rule_stmt = id, '::=', rhs_list, '.', rule_action;
-        """
+    def _stmt_rule(self, lhs, _cc, rhs_list, _dot, action):
         return _make_rule(lhs, None, rhs_list, action)
-
-    @action
-    def stmt_rule2(self, lhs, lhs_name, rhs_list, action):
-        """
-        rule_stmt = id, '(', id, ')', '::=', rhs_list, '.', rule_action;
-        """
+    def _stmt_rule2(self, lhs, _lp, lhs_name, _rp, _cc, rhs_list, _dot, action):
         return _make_rule(lhs, lhs_name, rhs_list, action)
 
-    @action
-    def rhs_list_start(self, *args):
-        """
-        rhs_list = ;
-        """
-        return list(args)
-
-    @action
-    def rhs_list_append(self, lst, item):
-        """
-        rhs_list = rhs_list, named_item;
-        """
+    def _rhs_list_start(self):
+        return []
+    def _rhs_list_append(self, lst, item):
         lst.extend(item)
         return lst
 
-    @action
-    def named_item(self, sym, annot=None):
-        """
-        named_item = id;
-        named_item = id, '(', id, ')';
-        """
+    def _named_item(self, sym):
+        return [(sym, None)]
+    def _named_item_with_name(self, sym, _lp, annot, _rp):
         return [(sym, annot)]
 
-    @action
-    def named_item_lit(self, snippet):
-        """
-        named_item = ql;
-        """
+    def _named_item_lit(self, snippet):
         snippet = snippet.strip()
         snippet = LexLiteral(snippet)
         return self._lex_rhs(snippet)
 
-    @action
-    def named_item_snippet(self, snippet):
-        """
-        named_item = snippet;
-        """
+    def _named_item_snippet(self, snippet):
         snippet = snippet.text().strip()
         snippet = LexRegex(snippet)
         return self._lex_rhs(snippet)
 
     def _lex_rhs(self, rhs):
-        tok_name = self.implicit_tokens.get(rhs)
+        tok_name = self._implicit_tokens.get(rhs)
         if not tok_name:
-            tok_name = '_implicit_%d' % len(self.implicit_tokens)
-            self.implicit_tokens[rhs] = tok_name
+            tok_name = '_implicit_%d' % len(self._implicit_tokens)
+            self._implicit_tokens[rhs] = tok_name
         return [(tok_name, None)]
+
+    grammar = Grammar(
+        Rule('root', ('grammar',)),
+        Rule('grammar', (), action=_grammar_empty),
+        Rule('grammar', ('grammar', 'kw_include', 'SNIPPET'), action=_grammar_kw_user_include),
+        Rule('grammar', ('grammar', 'kw_token_type', 'SNIPPET'), action=_grammar_kw_token_type),
+        Rule('grammar', ('grammar', 'kw_context_lexer'), action=_grammar_kw_context_lexer),
+        Rule('grammar', ('grammar', 'type_stmt'), action=_grammar_type),
+        Rule('grammar', ('grammar', 'rule_stmt'), action=_grammar_rule),
+        Rule('grammar', ('grammar', 'lex_stmt'), action=_grammar_lex),
+        Rule('rule_action', ()),
+        Rule('rule_action', ('SNIPPET',)),
+        Rule('lex_stmt', ('lex_lhs', '~=', 'lex_rhs'), action=_lex_stmt),
+        Rule('lex_stmt', ('lex_lhs', '~=', 'lex_rhs', 'SNIPPET'), action=_lex_stmt_with_action),
+        Rule('lex_lhs', ('ID',), action=_lex_lhs),
+        Rule('lex_lhs', ('ID', '(', 'ID', ')'), action=_lex_lhs_with_name),
+        Rule('lex_rhs', ('SNIPPET',), action=_lex_rhs_snip),
+        Rule('lex_rhs', ('SNIPPET', '(', 'ID', ')'), action=_lex_rhs_snip_with_name),
+        Rule('lex_rhs', ('QL',), action=_lex_rhs_lit),
+        Rule('lex_rhs', ('QL', '(', 'ID', ')'), action=_lex_rhs_lit_with_name),
+        Rule('type_stmt', ('ID', '::', 'SNIPPET'), action=_stmt_type),
+        Rule('type_stmt', ('ID', '::', 'ID'), action=_stmt_type_void),
+        Rule('rule_stmt', ('ID', '::=', 'rhs_list', '.', 'rule_action'), action=_stmt_rule),
+        Rule('rule_stmt', ('ID', '(', 'ID', ')', '::=', 'rhs_list', '.', 'rule_action'), action=_stmt_rule2),
+        Rule('rhs_list', (), action=_rhs_list_start),
+        Rule('rhs_list', ('rhs_list', 'named_item'), action=_rhs_list_append),
+        Rule('named_item', ('ID',), action=_named_item),
+        Rule('named_item', ('ID', '(', 'ID', ')'), action=_named_item_with_name),
+        Rule('named_item', ('QL',), action=_named_item_lit),
+        Rule('named_item', ('SNIPPET',), action=_named_item_snippet)
+        )
 
 def lime_lexer(input, filename=None):
     for tok in simple_lexer(input, _LimeLexerClassify(), filename=filename):
         if isinstance(tok, tuple) or isinstance(tok, Token):
-            if tok[0] == 'id' and tok[1][:1] == '%':
+            if tok[0] == 'op':
+                yield Token(tok[1], tok[1], tok.pos())
+                continue
+            if tok[0] == 'ID' and tok[1][:1] == '%':
                 yield Token('kw_' + tok[1][1:], tok[1], tok.pos())
                 continue
-            if tok[0] == 'snippet':
-                yield Token('snippet', tok[1][:-1], tok.pos())
+            if tok[0] == 'SNIPPET':
+                yield Token('SNIPPET', tok[1][:-1], tok.pos())
                 continue
 
         yield tok
 
 def _extract(tok):
-    return tok[1] if tok[0] != 'snippet' else tok
+    return tok[1] if tok[0] != 'SNIPPET' else tok
 
 def parse_lime_grammar(input, filename=None):
-    p = _LimeGrammar()
+    p = LimeGrammar()
     from lrparser import extract_second
     return p.parse(lime_lexer(input, filename=filename), extract_value=_extract)
 
@@ -413,6 +362,20 @@ def make_lime_parser(g, **kw):
 
     p.lexparse = types.MethodType(_lexparse, p)
     return p
+
+def print_grammar_as_lime(grammar, translate=lambda x: x, file=sys.stdout):
+    def _format_symbol(sym):
+        tran_sym = translate(sym)
+        if tran_sym is None:
+            if all(((ch.isalnum() or ch in '_-%') for ch in sym)):
+                return sym
+            else:
+                return '"%s"' % sym
+        else:
+            return tran_sym
+
+    for rule in grammar:
+        file.write('%s ::= %s.\n' % (rule.left, ' '.join((_format_symbol(sym) for sym in rule.right))))
 
 if __name__ == "__main__":
     test = """
