@@ -1,50 +1,210 @@
-#TODO: document matchers properly.
+"""
+This module provides the make_lrparser function, which creates
+a parser from a grammar in LR(k) form and return an object providing
+a single function, `parse`. Most often, `k` is set to 1.
+
+    >>> g1 = Grammar(
+    ...     Rule('list', ()),
+    ...     Rule('list', ('list', 'item'))
+    ...     )
+    >>> p1 = make_lrparser(g1)
+
+Parsing
+-------
+The `parse` function expects an iterable yielding tokens.
+
+Whenever a reduction occurs, the parser calls the semantic action
+associated with the rule through which the reduction is happening.
+Remember that through the default action, the parsing will yield
+a simple parse tree.
+
+    >>> p1.parse([])
+    ()
+    >>> p1.parse(['item'])
+    ((), 'item')
+    >>> p1.parse(['item', 'item'])
+    (((), 'item'), 'item')
+
+Modify the semantic actions to get the required results.
+
+    >>> g2 = Grammar(
+    ...     Rule('list', (), lambda ctx: 0),
+    ...     Rule('list', ('list', 'item'), lambda ctx, l, i: l + 1)
+    ...     )
+    >>> p2 = make_lrparser(g2)
+    >>> p2.parse([])
+    0
+    >>> p2.parse(['item'])
+    1
+    >>> p2.parse(['item', 'item'])
+    2
+
+    >>> def append_list(ctx, l, i): l.append(i); return l
+    >>> g3 = Grammar(
+    ...     Rule('list', (), lambda ctx: []),
+    ...     Rule('list', ('list', 'item'), append_list)
+    ...     )
+    >>> p3 = make_lrparser(g3)
+    >>> p3.parse([])
+    []
+    >>> p3.parse(['item'])
+    ['item']
+    >>> p3.parse(['item', 'item'])
+    ['item', 'item']
+
+Typically, tokens will be complex objects, containing not only
+the terminal symbol name, but also a value and potentially a source
+text position.
+
+During parsing, the parser uses `extract_symbol` function to recover
+the name of the terminal symbol and `extract_value` to recover
+the token's value. The token values are passed to semantic actions.
+
+The default `extract_symbol` and `extract_value` functions are designed
+off-the-shelf to work with tuples and user-defined objects.
+
+ 1. For tuples, the first member is assumed to be the symbol name
+    and the second member the token's value. The rest of the tuple
+    is ignored and may contain additional information.
+ 2. For objects, the symbol is read from the `symbol` member,
+    while the value is read from `value` member. If the object
+    doesn't have the `value` member, the object itself is used
+    as the token's value.
+ 3. Otherwise, the token is assumed to represent both the symbol
+    and the value.
+
+    >>> class Tok:
+    ...     def __init__(self, val):
+    ...         self.symbol = 'item'
+    ...         self.value = val
+    >>> p1.parse([Tok('a'), Tok('b'), Tok('c')])
+    ((((), 'a'), 'b'), 'c')
+    >>> p3.parse([Tok('a'), Tok('b'), Tok('c')])
+    ['a', 'b', 'c']
+
+You can override both the `extract_symbol` and `extract_value`
+by passing your custom versions to the `parse` method.
+
+    >>> p3.parse('abc', extract_symbol=lambda tok: 'item')
+    ['a', 'b', 'c']
+
+The context passed to the semantic actions is `None` by default,
+but can be changed with the `context` parameter passed to the `parse`
+method.
+
+Errors during parser construction
+---------------------------------
+Errors during parser construction and parsing itself are signaled with
+exceptions. The `make_lrparser` function with raise `ActionConflictError`
+if the grammar turns out not to be LR(k).
+
+    >>> g = Grammar(
+    ...     Rule('root', ('header', 'list',)),
+    ...     Rule('list', ()),
+    ...     Rule('list', ('item',)),
+    ...     Rule('list', ('list', 'item')),
+    ...     )
+    >>> make_lrparser(g, k=0) # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+       ...
+    ActionConflictError: shift/reduce conflict during LR(0) parser construction
+
+The `ActionConflictError` contains details about the LR conflict,
+in particular
+
+ * the grammar `g` that failed to be LR(k),
+ * the list of LR(k) `states` constructed from the grammar, and
+ * `conflicting_state`, the state in which the conflict occurred.
+
+To debug the problem, the exception object provides the methods
+`format_trace` and its companion, `print_trace`. These methods
+print a sequence of states, which form a counterexample and
+also highlight the conflicting items.
+
+    >>> try:
+    ...     make_lrparser(g, k=0)
+    ... except ActionConflictError, e:
+    ...     err = e
+    >>> print err.format_trace()
+     '' = . 'root';
+    >'root' = . 'header', 'list';
+    <BLANKLINE>
+     'root' = 'header' . 'list';
+    >'list' = . ;
+    >'list' = . 'item';
+     'list' = . 'list', 'item';
+
+In the above example, the last state has two items highlighted;
+a shift/reduce conflict can be seen. By following the list of states,
+a counterexample can be constructed: ['header', 'item'],
+
+LR tables and states
+--------------------
+Internally, the object returned from `make_lrparser` contains a list
+of LR parser states, which is followed during parsing. The state list
+can however be used directly, e.g. to compile a LR parser in another
+language (wink, wink).
+
+The states are stored in the `states` member variable as a list
+of `State` objects. A state object contains the corresponding action
+and goto tables.
+
+See the documentation for the `State` class for more information.
+"""
 
 from grammar import Grammar, Rule
 from first import First
 from matchers import default_matchers
-from simple_lexer import Token
+import sys
+
+def _extract_symbol(token):
+    return token[0] if isinstance(token, tuple) else getattr(token, 'symbol', token)
+
+def _extract_value(token):
+    return token[1] if isinstance(token, tuple) else getattr(token, 'value', token)
 
 class InvalidGrammarError(Exception):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
 
-class ActionConflictError(InvalidGrammarError):
+class ActionConflictError(Exception):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
-    def __init__(self, message, relevant_state, states, g):
+    def __init__(self, message, conflicting_state, states, g, item1, item2):
         InvalidGrammarError.__init__(self, message)
         self.states = states
-        self.relevant_state = relevant_state
+        self.conflicting_state = conflicting_state
         self.g = g
-    
-    def pretty_states(self):
-        """Returns a string with pretty-printed itemsets."""
+        self.item1 = item1
+        self.item2 = item2
+
+    def format_trace(self):
+        state = self.conflicting_state
+
         res = []
-        for state in self.states:
-            for item in state.itemset:
-                res.append(str(item))
-                res.append('\n')
-            res.append('\n')
-        return ''.join(res)
-    
-    def relevant_state_trace(self):
-        state = self.relevant_state
-        
-        res = []
-        while state != None:
-            res.append(str(state))
-            
+        res.append('\n'.join([('>' if i in (self.item1, self.item2) else ' ') + str(item) for i, item in enumerate(state.itemlist)]))
+
+        while True:
+            parent_symbol = state.parent_symbol
             next_id = state.parent_id
             state = self.states[next_id] if next_id != None else None
-        
-        return '\n'.join(res)
+            if state is None:
+                break
+            res.append('\n'.join([('>' if item.next_token() == parent_symbol else ' ') + str(item) for i, item in enumerate(state.itemlist)]))
+
+        return '\n\n'.join(reversed(res))
+
+    def print_trace(self, file=sys.stderr):
+        print >>file, self.format_trace()
 
     def counterexample(self):
         trace = []
-        st = self.relevant_state
+        st = self.conflicting_state
         while st.parent_id:
             trace.append(st.parent_symbol)
             st = self.states[st.parent_id]
-        return reversed([self.g.token_comments.get(sym, sym) for sym in trace])
+        trace.append(st.parent_symbol)
+        if hasattr(self.g, 'token_comments'):
+            trace = [self.g.token_comments.get(sym, sym) for sym in trace]
+        return tuple(reversed(trace))
 
 class ParsingError(Exception):
     """Raised by a parser if the input word is not a sentence of the grammar."""
@@ -53,28 +213,8 @@ class ParsingError(Exception):
         Exception.__init__(self, message)
     def __str__(self):
         return '%s, position %d' % (self.args[0], self.position)
-    
-def extract_first(token):
-    """Returns the argument or, if it is a tuple, its first member.
-    
-    >>> extract_first('list')
-    'list'
-    >>> extract_first(('item', 42))
-    'item'
-    """
-    return token[0] if isinstance(token, tuple) or isinstance(token, Token) else token
 
-def extract_second(token):
-    """Returns the argument or, if it is a tuple, its second member.
-    
-    >>> extract_first('list')
-    'list'
-    >>> extract_first(('item', 42))
-    42
-    """
-    return token[1] if isinstance(token, tuple) or isinstance(token, Token) else token
-
-class Parser(object):
+class _LrParser(object):
     """Represents a LR(k) parser.
     
     The parser is created with a grammar and a 'k'. The LR parsing tables
@@ -82,25 +222,21 @@ class Parser(object):
     an InvalidGrammarException is raised.
     
     >>> not_a_lr0_grammar = Grammar(Rule('list'), Rule('list', ('item', 'list')))
-    >>> Parser(not_a_lr0_grammar, k=0) # doctest: +ELLIPSIS
+    >>> _LrParser(not_a_lr0_grammar, k=0)
     Traceback (most recent call last):
         ...
-    ActionConflictError: LR(0) table conflict: ...
+    ActionConflictError: shift/reduce conflict during LR(0) parser construction
 
     >>> lr0_grammar = Grammar(
     ...     Rule('list', action=lambda self: []),
     ...     Rule('list', ('list', 'item'), action=lambda self, l, i: l + [i]))
-    >>> p = Parser(lr0_grammar, k=0)
-    >>> print p.grammar
-    'list' = ;
-    'list' = 'list', 'item';
+    >>> p = _LrParser(lr0_grammar, k=0)
     
     The method 'parse' will accept an iterable of tokens, which are arbitrary objects.
     A token T is matched to a terminal symbol S in the following manner. First,
     the terminal S is looked up in the 'matchers' dict, passed during parser's construction.
-    If found, the match is successful if 'matchers[S](extract(T))' is true.
-    Otherwise, matching is done with the equality operator, i.e. 'S == extract(T)'.
-    The 'extract' function is passed to the 'parse' method and defaults to 'extract_first'.
+    If found, the match is successful if 'matchers[S](extract_symbol(T))' is true.
+    Otherwise, matching is done with the equality operator, i.e. 'S == extract_symbol(T)'.
     
     Whenever the parser reduces a word to a non-terminal, the associated semantic action is executed.
     This way Abstract Syntax Trees or other objects can be constructed. The parse method
@@ -110,7 +246,7 @@ class Parser(object):
     []
     >>> p.parse(('item', 'item', 'item', 'item'))
     ['item', 'item', 'item', 'item']
-    >>> p.parse('spam', extract=lambda x: 'item')
+    >>> p.parse('spam', extract_symbol=lambda x: 'item')
     ['s', 'p', 'a', 'm']
     
     Optionally, the 'parse' function will accept a 'context' keyword argument.
@@ -125,10 +261,9 @@ class Parser(object):
     """
     
     def __init__(self, grammar, k=1, keep_states=False):
-        
         if grammar.root() == None:
-            raise InvalidGrammarError('There must be at least one rule in the grammar.')
-        
+            raise InvalidGrammarError('The grammar needs a root non-terminal.')
+
         self.grammar = grammar
         self.k = k
         
@@ -172,24 +307,27 @@ class Parser(object):
         
         accepting_state = None
         
-        def add_action(state, lookahead, action, item):
+        def add_action(state, lookahead, action, new_item_index):
+            new_item = state.itemlist[new_item_index]
             if lookahead in state.action and state.action[lookahead] != action:
-                raise ActionConflictError('LR(%d) table conflict: actions %s, %s trying to add %s'
-                    % (k, state.action[lookahead], action, item), state, states, grammar)
+                conflict_type = 'shift/reduce' if action is None or state.action[lookahead] is None else 'reduce/reduce'
+                raise ActionConflictError('%s conflict during LR(%d) parser construction' % (conflict_type, k),
+                    state, states, grammar, new_item_index, state.action_origin[lookahead])
             state.action[lookahead] = action
+            state.action_origin[lookahead] = new_item_index
         
         for state_id, state in enumerate(states):
-            for item in state.itemset:
+            for item_index, item in enumerate(state.itemlist):
                 nt = item.next_token()
                 if nt == None:
                     if item.rule.left == '':
                         accepting_state = state_id
-                        add_action(state, item.lookahead, None, item)
+                        add_action(state, item.lookahead, None, item_index)
                     else:
-                        add_action(state, item.lookahead, item.rule, item)
+                        add_action(state, item.lookahead, item.rule, item_index)
                 elif aug_grammar.is_terminal(nt):
                     for la in item.lookaheads(first):
-                        add_action(state, la, None, item)
+                        add_action(state, la, None, item_index)
         
         assert accepting_state != None
         
@@ -216,8 +354,8 @@ class Parser(object):
                 if symbol in matchers:
                     state.goto_match.append((matchers[symbol], next_state))
 
-    def parse(self, sentence, context=None, extract=extract_first,
-            extract_value=lambda x: x, prereduce_visitor=None, postreduce_visitor=None,
+    def parse(self, sentence, context=None, extract_symbol=_extract_symbol,
+            extract_value=_extract_value, prereduce_visitor=None, postreduce_visitor=None,
             shift_visitor=None, state_visitor=None):
         it = iter(sentence)
 
@@ -264,7 +402,7 @@ class Parser(object):
                 state_visitor(state)
 
             update_lookahead()
-            key = tuple(extract(token) for token in lookahead)
+            key = tuple(extract_symbol(token) for token in lookahead)
             action = state.get_action(key, token_counter)
             if action:   # reduce
                 if len(action.right) > 0:
@@ -296,65 +434,9 @@ class Parser(object):
                         raise ParsingError('Reached the end of file prematurely.', token_counter)
                 token_counter += 1
                 
-                key = extract(tok)
+                key = extract_symbol(tok)
                 stack.append(state.get_next_state(key, token_counter))
                 asts.append(extract_value(tok))
-
-class _Item:
-    def __init__(self, rule, index, lookahead):
-        self.rule = rule
-        self.index = index
-        self.lookahead = lookahead
-        
-        self.final = len(self.rule.right) <= self.index
-    
-    def __cmp__(self, other):
-        return cmp(
-            (self.rule, self.index, self.lookahead),
-            (other.rule, other.index, other.lookahead))
-    
-    def __hash__(self):
-        return hash((self.rule, self.index, self.lookahead))
-        
-    def __str__(self):
-        right_syms = [repr(symbol) for symbol in self.rule.right]
-        if self.index == 0:
-            if not right_syms:
-                right_syms = ['. ']
-            else:
-                right_syms[0] = '. ' + right_syms[0]
-        elif self.index == len(right_syms):
-            right_syms[self.index - 1] = right_syms[self.index - 1] + ' . '
-        else:
-            right_syms[self.index - 1] = right_syms[self.index - 1] + ' . ' + right_syms[self.index]
-            del right_syms[self.index]
-        return ''.join((repr(self.rule.left), ' = ', ', '.join(right_syms), '; ', str(self.lookahead)))
-        
-    def is_kernel(self):
-        return self.index != 0 or self.rule.left == ''
-    
-    def next_token(self):
-        return self.rule.right[self.index] if not self.final else None
-    
-    def next_lookaheads(self, first):
-        rule_suffix = self.rule.right[self.index + 1:]
-        word = rule_suffix + self.lookahead
-        return first(word)
-    
-    def lookaheads(self, first):
-        rule_suffix = self.rule.right[self.index:]
-        word = rule_suffix + self.lookahead
-        return first(word)
-
-class _SymbolMatcher:
-    def __init__(self, symbol):
-        self.symbol = symbol
-        
-    def __call__(self, symbol):
-        return self.symbol == symbol
-        
-    def __repr__(self):
-        return '_SymbolMatcher(%s)' % self.symbol
 
 class State:
     """Represents a single state of a LR(k) parser.
@@ -374,6 +456,7 @@ class State:
 
         self.goto = {}
         self.action = {}
+        self.action_origin = {}
 
         self.action_match = []
         self.goto_match = []
@@ -387,14 +470,13 @@ class State:
         return hash(self.itemset)
         
     def __repr__(self):
-        return repr(self.itemset)
+        return repr(self.itemlist)
     
     def __str__(self):
         res = []
-        for item in self.itemset:
-            res.append(('#' if not item.is_kernel() else ' ') + str(item) + '\n')
-        res.sort()
-        return ''.join(res)
+        for item in self.itemlist:
+            res.append(str(item))
+        return '\n'.join(res)
 
     def get_action(self, lookahead, counters):
         if lookahead in self.action:
@@ -438,6 +520,68 @@ class State:
             i += 1
             
         self.itemset = frozenset(itemset)
+        self.itemlist = tuple(itemlist)
+
+class _Item:
+    def __init__(self, rule, index, lookahead):
+        self.rule = rule
+        self.index = index
+        self.lookahead = lookahead
+        
+        self.final = len(self.rule.right) <= self.index
+    
+    def __cmp__(self, other):
+        return cmp(
+            (self.rule, self.index, self.lookahead),
+            (other.rule, other.index, other.lookahead))
+    
+    def __hash__(self):
+        return hash((self.rule, self.index, self.lookahead))
+        
+    def __str__(self):
+        right_syms = [repr(symbol) for symbol in self.rule.right]
+        if self.index == 0:
+            if not right_syms:
+                right_syms = ['. ']
+            else:
+                right_syms[0] = '. ' + right_syms[0]
+        elif self.index == len(right_syms):
+            right_syms[self.index - 1] = right_syms[self.index - 1] + ' . '
+        else:
+            right_syms[self.index - 1] = right_syms[self.index - 1] + ' . ' + right_syms[self.index]
+            del right_syms[self.index]
+
+        lookahead = ''.join((' (', ', '.join(self.lookahead), ')')) if self.lookahead else ''
+        return ''.join((repr(self.rule.left), ' = ', ', '.join(right_syms), ';', lookahead))
+        
+    def is_kernel(self):
+        return self.index != 0 or self.rule.left == ''
+    
+    def next_token(self):
+        return self.rule.right[self.index] if not self.final else None
+    
+    def next_lookaheads(self, first):
+        rule_suffix = self.rule.right[self.index + 1:]
+        word = rule_suffix + self.lookahead
+        return first(word)
+    
+    def lookaheads(self, first):
+        rule_suffix = self.rule.right[self.index:]
+        word = rule_suffix + self.lookahead
+        return first(word)
+
+class _SymbolMatcher:
+    def __init__(self, symbol):
+        self.symbol = symbol
+        
+    def __call__(self, symbol):
+        return self.symbol == symbol
+        
+    def __repr__(self):
+        return '_SymbolMatcher(%s)' % self.symbol
+
+def make_lrparser(g, k=1, keep_states=False):
+    return _LrParser(g, k, keep_states)
 
 if __name__ == "__main__":
     import doctest

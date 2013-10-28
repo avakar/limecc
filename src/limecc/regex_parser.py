@@ -1,5 +1,4 @@
 from grammar import Rule, Grammar
-from lrparser import Parser
 from docparser import parser_LR, action, matcher
 from fa import State, Edge, Fa, union_fa, _Lit
 
@@ -229,8 +228,9 @@ def make_enfa_from_regex(regex, accept_label):
 
 def regex_parser(input):
     p = _RegexParser()
-    from lrparser import extract_second
-    return p.parse(_regex_lexer(input), extract_value=extract_second)
+    def _extract_second(token):
+        return token[1] if isinstance(token, tuple) else token
+    return p.parse(_regex_lexer(input), extract_value=_extract_second)
 
 if __name__ == '__main__':
     import doctest

@@ -68,8 +68,8 @@ SNIPPET ~= <an arbitrary text enclosed in braces>.
                     fout.write(lime_cpp(p))
 
         except ActionConflictError, e:
-            print e
-            print 'Counter-example:', ', '.join((str(sym) for sym in e.counterexample()))
+            print e.message
+            e.print_trace()
             return 1
         except Exception, e:
             import traceback

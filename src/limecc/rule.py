@@ -1,11 +1,11 @@
-def pretty_reduce(self, *args):
+def _unbox_onetuples(ctx, *args):
     """This is the default action associated with Rule objects.
     
-    >>> pretty_reduce(None, 'data')
+    >>> _unbox_onetuples(None, 'data')
     'data'
-    >>> pretty_reduce(None)
+    >>> _unbox_onetuples(None)
     ()
-    >>> pretty_reduce(None, 'data1', 'data2')
+    >>> _unbox_onetuples(None, 'data1', 'data2')
     ('data1', 'data2')
     """
     if len(args) == 1:
@@ -62,7 +62,7 @@ class Rule:
     of this function and the number of symbols on the right plus one must match.
     The first argument is called a context and represents arbitrary data passed to the parser.
     The parameter is usually called 'self' for obvious reasons. The default
-    action is the 'pretty_reduce' function.
+    action is the '_unbox_onetuples' function.
     
     >>> r.action(None, [], 1)
     ([], 1)
@@ -79,22 +79,20 @@ class Rule:
     [1]
     """
 
-    def __init__(self, left, right=(), action=pretty_reduce, **extra):
+    def __init__(self, left, right=(), action=_unbox_onetuples):
         """
         Constructs a rule from the left symbol, an iterable of right symbols
         and an associated semantic action.
         """
-        self.id = None
         self.left = left
         self.right = tuple(right)
         self.action = action
-        self.extra = extra
 
     def __eq__(self, other):
-        return (self.id, self.left, self.right, self.action) == (other.id, other.left, other.right, other.action)
+        return (self.left, self.right, self.action) == (other.left, other.right, other.action)
 
     def __hash__(self):
-        return hash((self.id, self.left, self.right, self.action))
+        return hash((self.left, self.right, self.action))
 
     def __str__(self):
         """
@@ -102,8 +100,16 @@ class Rule:
         'a' = 'b', 'c';
         >>> print Rule('a')
         'a' = ;
+        >>> def _custom_action(ctx): pass
+        >>> print Rule('a', (), _custom_action)
+        'a' = ; {_custom_action}
+        >>> print Rule('a', (), lambda x: x)
+        'a' = ; {<lambda>}
         """
-        return ''.join((repr(self.left), ' = ', ', '.join(repr(symbol) for symbol in self.right), ';'))
+        r = [repr(self.left), ' = ', ', '.join(repr(symbol) for symbol in self.right), ';']
+        if self.action != _unbox_onetuples:
+            r.extend((' {', getattr(self.action, 'func_name', ''), '}'))
+        return ''.join(r)
 
     def __repr__(self):
         """
@@ -111,11 +117,19 @@ class Rule:
         Rule('a', ('b', 'c'))
         >>> print repr(Rule('a'))
         Rule('a')
+        >>> def _my_action(ctx): return None
+        >>> print repr(Rule('a', (), action=_my_action)) # doctest: +ELLIPSIS
+        Rule('a', (), <function _my_action...>)
+        >>> print repr(Rule('a', (), action=lambda x: x)) # doctest: +ELLIPSIS
+        Rule('a', (), <function <lambda>...>)
         """
-        if not self.right:
-            return 'Rule(%s)' % repr(self.left)
+        if self.action != _unbox_onetuples:
+            args = (self.left, self.right, self.action)
+        elif self.right:
+            args = (self.left, self.right)
         else:
-            return 'Rule%s' % repr((self.left, self.right))
+            args = (self.left,)
+        return 'Rule(%s)' % ', '.join((repr(arg) for arg in args))
 
 if __name__ == "__main__":
     import doctest

@@ -100,7 +100,7 @@ to tranform the value of the corresponding nonterminal.
 """
 
 from grammar import Rule, Grammar
-from lrparser import Parser
+from lrparser import make_lrparser
 from simple_lexer import simple_lexer
 
 class _Item:
@@ -203,14 +203,8 @@ def _concat_list(self, list, item):
     list.append(item)
     return list
     
-def _id(self, item):
-    return item
-    
-def _extract_identifier(self, id_token):
-    return id_token[1]
-    
 def _concat_symbols(self, symbol, id):
-    return ' '.join((symbol, id[1]))
+    return ' '.join((symbol, id))
 
 class _ParsingContext:
     """A parsing state of an EBNF syntax parser."""
@@ -244,8 +238,7 @@ class _ParsingContext:
         
         The 'lit' argument is a terminal token, a tuple ('ql', value).
         """
-        visible = quote == '"'
-        return _Item([ch for ch in lit[1]], [visible for ch in lit[1]], [])
+        return _Item([lit], [quote == '"'], [])
     
     def item_group(self, _1, alt_list, _2):
         """
@@ -343,7 +336,7 @@ _ebnf_grammar = Grammar(
     Rule('alt_list', ('seq_list',),  action=_ParsingContext.new_alt_list),
     Rule('alt_list', ('alt_list', '|', 'seq_list'), action=_ParsingContext.append_alt_list),
     
-    Rule('seq_list', ('item',), action=_id),
+    Rule('seq_list', ('item',)),
     Rule('seq_list', ('seq_list', ',', 'item'), action=_ParsingContext.seq_list_concat),
     
     Rule('item', ('sym',), action=_ParsingContext.item_sym),
@@ -355,11 +348,11 @@ _ebnf_grammar = Grammar(
     Rule('item', ('item', '+'), action=_ParsingContext.item_kleene_plus),
     Rule('item', ('item', '*'), action=_ParsingContext.item_kleene_star),
     
-    Rule('sym', ('id',), action=_extract_identifier),
+    Rule('sym', ('id',)),
     Rule('sym', ('sym', 'id'), action=_concat_symbols)
     )
     
-_ebnf_parser = Parser(_ebnf_grammar, k=1)
+_ebnf_parser = make_lrparser(_ebnf_grammar, k=1)
 
 def ebnf_parse(input, action=_pretty_forward_args, counter=None):
     """Parses an EBNF grammar and returns a corresponding list of Rule objects."""
@@ -369,7 +362,7 @@ def ebnf_parse(input, action=_pretty_forward_args, counter=None):
 
 def parse_from_ebnf(input, ebnf, action=_pretty_forward_args):
     """Parses an EBNF grammar, creates a parser for it and parses an input with it."""
-    return Parser(Grammar(*ebnf_parse(ebnf, action=action))).parse(input)
+    return make_lrparser(Grammar(*ebnf_parse(ebnf, action=action))).parse(input)
 
 if __name__ == "__main__":
     import doctest

@@ -59,9 +59,9 @@ def _augment_parserclass(cls, k, imbue_default_matchers):
             matchers[name] = value.fn
             matchers['-' + name] = value
     
-    from lrparser import Parser
+    from lrparser import make_lrparser
     grammar = extract_grammar(cls)
-    cls.parser = Parser(grammar, k)
+    cls.parser = make_lrparser(grammar, k)
     
     cls.parser.imbue_matchers(matchers)
 

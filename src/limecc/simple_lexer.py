@@ -41,43 +41,15 @@ class TokenPos:
 
 class Token:
     def __init__(self, kind, text, pos=None):
-        self.tok = (kind, text)
-        self._pos = pos
-
-    def __iter__(self):
-        return iter(self.tok)
-
-    def __len__(self):
-        return len(self.tok)
-
-    def __eq__(self, rhs):
-        if isinstance(rhs, Token):
-            return self.tok == rhs.tok
-        return self.tok == rhs
-
-    def __hash__(self):
-        return hash(self.tok)
-
-    def __str__(self):
-        return str(self.tok)
+        self.symbol = kind
+        self.value = text
+        self.pos = pos
 
     def __repr__(self):
         if self.pos is not None:
-            return 'Token(%r, %r, %r)' % (self.tok[0], self.tok[1], self._pos)
+            return 'Token(%r, %r, %r)' % (self.symbol, self.value, self.pos)
         else:
-            return 'Token(%r, %r)' % self.tok
-
-    def __getitem__(self, i):
-        return self.tok[i]
-
-    def kind(self):
-        return self.tok[0]
-
-    def text(self):
-        return self.tok[1]
-
-    def pos(self):
-        return self._pos
+            return 'Token(%r, %r)' % (self.symbol, self.value)
 
 def simple_lexer(input, classify=None, filename=None):
     """Provides a simple lexer.

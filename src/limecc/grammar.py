@@ -4,43 +4,45 @@ class Grammar:
     """Represents a set of production rules.
     
     Each rule is encapsulated by an instance of the 'Rule' class.
-    The rules can either be supplied during construction or added later
-    using the 'add' and 'extend' methods.
+    The rules are supplied during construction.
     
-    The grammar also tracks the root non-terminal, which is defined
-    to be the left symbol of the first rule. For an empty grammar,
+    The grammar also tracks the root non-terminal, which is either
+    set explicitly during construction, or assumed to be the left
+    hand side symbol of the first rule. For an empty grammar,
     there is no root and Grammar.root() will return None.
     
     >>> g = Grammar()
     >>> print g.root()
     None
 
-    >>> g = Grammar(Rule('list'))
-    >>> g.add(Rule('list', ('list', 'item')))
+    >>> g = Grammar(
+    ...     Rule('list'),
+    ...     Rule('list', ('list', 'item')))
     >>> print g
-    list ::= <empty>
-    list ::= list item
+    'list' = ;
+    'list' = 'list', 'item';
     >>> g.root()
     'list'
     
     Grammars expose their rules using the standard list interface.
-    There is, however, no support for splices and the list of rules
-    can only be mutated through calls to 'add' and 'extend'.
     
     >>> g[0]
     Rule('list')
     >>> len(g)
     2
     >>> for rule in g: print rule
-    list ::= <empty>
-    list ::= list item
+    'list' = ;
+    'list' = 'list', 'item';
     
     Symbols are considered non-terminal (with respect to a grammar) if
     they stand on the left side of some rule. All other symbols are considered terminal.
     A grammar can test a symbol for its terminality. It also exposes a list of
     all non-terminals and a list of all referenced symbols.
     
-    >>> g.add(Rule('root', ('list',)))
+    >>> g = Grammar(
+    ...     Rule('list'),
+    ...     Rule('list', ('list', 'item')),
+    ...     Rule('root', ('list',)))
     >>> [g.is_terminal(symbol) for symbol in ('list', 'root', 'item', 'unreferenced')]
     [False, False, True, True]
     >>> sorted(list(g.symbols()))
@@ -51,22 +53,36 @@ class Grammar:
     The grammar also allows fast access to a set of rules with a given symbol on the left.
     
     >>> for rule in g.rules('list'): print rule
-    list ::= <empty>
-    list ::= list item
+    'list' = ;
+    'list' = 'list', 'item';
     >>> for rule in g.rules('unreferenced'): print rule
     >>> for rule in g.rules('root'): print rule
-    root ::= list
+    'root' = 'list';
     """
-    def __init__(self, *rules):
-        self._rules = []
+    def __init__(self, *rules, **kw):
+        if any((opt not in ('root', 'symbols') for opt in kw)) or any((not isinstance(rule, Rule) for rule in rules)):
+            raise AttributeError('Unknown argument')
+
+        self._rules = rules
+        self._nonterms = frozenset((rule.left for rule in self._rules))
+
+        symbols = []
+        for rule in self._rules:
+            symbols.append(rule.left)
+            symbols.extend(rule.right)
+
+        if 'symbols' in kw:
+            symbols.extend(kw['symbols'])
+
+        self._symbols = frozenset(symbols)
+        self._root = kw.get('root', self._rules[0].left if self._rules else None)
+
         self._rule_cache = {}
-        self._nonterms = set()
-        self._symbols = set()
-        
-        self.extend(rules)
-        
-    def __getitem__(self, key):
-        return self._rules[key]
+        for left in self._nonterms:
+            self._rule_cache[left] = tuple([rule for rule in self._rules if rule.left == left])
+
+    def __getitem__(self, index):
+        return self._rules[index]
         
     def __len__(self):
         return len(self._rules)
@@ -77,8 +93,8 @@ class Grammar:
     def __str__(self):
         """
         >>> print Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b')))
-        a ::= b c
-        a ::= c b
+        'a' = 'b', 'c';
+        'a' = 'c', 'b';
         """
         return '\n'.join(str(rule) for rule in self._rules)
     
@@ -89,35 +105,16 @@ class Grammar:
         """
         return 'Grammar(%s)' % ', '.join(repr(rule) for rule in self._rules)
         
-    def add(self, rule):
-        """Adds a rule to the grammar."""
-        self._rules.append(rule)
-        self._nonterms.add(rule.left)
-        self._symbols.add(rule.left)
-        self._rule_cache.setdefault(rule.left, []).append(rule)
-        
-        for symbol in rule.right:
-            self._symbols.add(symbol)
-
-    def add_symbol(self, symbol):
-        """Addes a symbol without adding any rule that references it."""
-        self._symbols.add(symbol)
-
-    def extend(self, rules):
-        """Extends the grammar by the given set of rules."""
-        for rule in rules:
-            self.add(rule)
-
     def rules(self, left):
         """Retrieves the set of rules with a given non-terminal on the left.
         
         >>> g = Grammar(Rule('a', ('b',)), Rule('b', ('c',)), Rule('b', ('d',)))
         >>> for rule in g.rules('a'): print rule
-        a ::= b
+        'a' = 'b';
         >>> for rule in g.rules('c'): print rule
         >>> for rule in g.rules('b'): print rule
-        b ::= c
-        b ::= d
+        'b' = 'c';
+        'b' = 'd';
         """
         return self._rule_cache.get(left, ())
     
@@ -151,11 +148,11 @@ class Grammar:
         >>> g = Grammar()
         >>> print g.root()
         None
-        >>> g.add(Rule('a', ('b',)))
+        >>> g = Grammar(Rule('a', ('b',)))
         >>> print g.root()
         a
         """
-        return self._rules[0].left if self._rules else None
+        return self._root
         
 if __name__ == "__main__":
     import doctest
