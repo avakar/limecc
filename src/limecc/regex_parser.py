@@ -1,139 +1,107 @@
 from grammar import Rule, Grammar
-from docparser import parser_LR, action, matcher
-from fa import State, Edge, Fa, union_fa, _Lit
+from lrparser import make_lrparser
+from fa import Fa
 
-class _Empty:
-    pass
+class Lit:
+    def __init__(self, charset, inv=False):
+        self.charset = frozenset(charset)
+        self.inv = inv
 
-class _Rep:
+    def __repr__(self):
+        if self.inv:
+            return 'Lit(%r, inv=True)' % (sorted(self.charset),)
+        else:
+            return 'Lit(%r)' % (sorted(self.charset),)
+
+    def __nonzero__(self):
+        return bool(self.charset) or self.inv
+
+    def __sub__(self, other):
+        if not self.inv and not other.inv:
+            return Lit(self.charset - other.charset, False)
+        elif self.inv and not other.inv:
+            return Lit(self.charset | other.charset, True)
+        elif not self.inv and other.inv:
+            return Lit(self.charset & other.charset, False)
+        else:
+            return Lit(other.charset - self.charset, False)
+
+    def __and__(self, other):
+        if not self.inv and not other.inv:
+            return Lit(self.charset & other.charset, False)
+        elif self.inv and not other.inv:
+            return Lit(other.charset - self.charset, False)
+        elif not self.inv and other.inv:
+            return Lit(self.charset - other.charset, False)
+        else:
+            return Lit(self.charset | other.charset, True)
+
+    def __or__(self, other):
+        if not self.inv and not other.inv:
+            return Lit(self.charset | other.charset, False)
+        elif self.inv and not other.inv:
+            return Lit(self.charset - other.charset, True)
+        elif not self.inv and other.inv:
+            return Lit(other.charset - self.charset, True)
+        else:
+            return Lit(self.charset & other.charset, True)
+
+    def __contains__(self, ch):
+        return self.inv != (ch in self.charset)
+
+class Rep:
     def __init__(self, term):
         self.term = term
 
-class _Alt:
-    def __init__(self, lhs, rhs):
-        self.lhs = lhs
-        self.rhs = rhs
+    def __repr__(self):
+        return 'Rep({0})'.format(repr(self.term))
 
-class _Concat:
-    def __init__(self, lhs, rhs):
-        self.lhs = lhs
-        self.rhs = rhs
+class Alt:
+    def __init__(self, *terms):
+        self.terms = terms
 
-@parser_LR(1)
-class _RegexParser:
-    """
-    root = alt;
-    alt = concat;
+    def __repr__(self):
+        return 'Alt({0})'.format(', '.join((repr(t) for t in self.terms)))
 
-    rep = atom;
+class Cat:
+    def __init__(self, *terms):
+        self.terms = tuple(terms)
 
-    atom = _lparen, alt, _rparen;
-    atom = literal;
-    """
+    def __repr__(self):
+        return 'Cat({0})'.format(', '.join((repr(t) for t in self.terms)))
 
-    @action
-    def ch(self, ch):
-        """
-        literal = ch;
-        """
-        return _Lit(ch)
+_escape_map = {
+    'd': '0123456789',
+    's': ' \n\r\t\v\f',
+    'w': 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_',
+    }
 
-    @action
-    def range(self, range_elems):
-        """
-        literal = _lbracket, { range_elem }, _rbracket;
-        """
-        charset = set()
-        for elem in range_elems:
-            charset.update(elem.charset)
-        return _Lit(charset)
+_regex_grammar = Grammar(
+    Rule('alt', ('cat',)),
+    Rule('alt', ('alt', '|', 'cat'), lambda self, lhs, _pipe, rhs: Alt(lhs, rhs) if not isinstance(lhs, Alt) else Alt(*(lhs.terms + (rhs,)))),
 
-    @action
-    def range_inv(self, range_elems):
-        """
-        literal = _lbracket, _circumflex, { range_elem }, _rbracket;
-        """
-        charset = set()
-        for elem in range_elems:
-            charset.update(elem.charset)
-        return _Lit(charset, inv=True)
+    Rule('cat', (), lambda self: None),
+    Rule('cat', ('cat', 'rep'), lambda self, cat, rep: rep if cat is None else Cat(*(cat.terms + (rep,))) if isinstance(cat, Cat) else Cat(cat, rep)),
 
-    @action
-    def escaped(self, esc):
-        """
-        literal = esc;
-        range_elem = esc;
-        """
-        if esc == 'd':
-            return _Lit('0123456789')
-        elif esc == 's':
-            return _Lit(' \n\r\t\v\f')
-        elif esc == 'n':
-            return _Lit('\n')
-        elif esc == 'w':
-            return _Lit('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_')
-        else:
-            return _Lit(esc)
+    Rule('rep', ('atom',)),
+    Rule('rep', ('atom', '*'), lambda self, atom, _star: Rep(atom)),
+    Rule('rep', ('atom', '+'), lambda self, atom, _plus: Cat(atom, Rep(atom))),
+    Rule('rep', ('atom', '?'), lambda self, atom, _q: Alt(None, atom)),
 
-    @action
-    def range_elem_ch(self, ch):
-        """
-        range_elem = ch;
-        """
-        return _Lit(ch)
+    Rule('atom', ('(', 'alt', ')'), lambda self, _l, alt, _r: alt),
+    Rule('atom', ('.',), lambda self, _dot: Lit('', inv=True)),
+    Rule('atom', ('c',), lambda self, ch: Lit(ch)),
+    Rule('atom', ('esc',), lambda self, ch: Lit(_escape_map.get(ch, ch))),
+    Rule('atom', ('[', 'range', ']'), lambda self, _l, range, _r: Lit(range)),
+    Rule('atom', ('[', '^', 'range', ']'), lambda self, _l, _c, range, _r: Lit(range, inv=True)),
 
-    @action
-    def range_elem_range(self, ch1, ch2):
-        """
-        range_elem = ch, _minus, ch;
-        """
-        ch1 = ord(ch1)
-        ch2 = ord(ch2)
-        if ch1 > ch2:
-            ch1, ch2 = ch2, ch1
-        return _Lit(set([chr(ch) for ch in xrange(ch1, ch2+1)]))
+    Rule('range', (), lambda self: ''),
+    Rule('range', ('range', 'range_elem'), lambda self, range, elem: range + elem),
 
-    @action
-    def rep(self, atom):
-        """
-        rep = atom, _star;
-        """
-        return _Rep(atom)
-
-    @action
-    def rep_plus(self, atom):
-        """
-        rep = atom, _plus;
-        """
-        return _Concat(atom, _Rep(atom))
-
-    @action
-    def rep_q(self, atom):
-        """
-        rep = atom, _q;
-        """
-        return _Alt(_Empty(), atom)
-
-    @action
-    def concat_empty(self):
-        """
-        concat = ;
-        """
-        return _Empty()
-
-    @action
-    def concat(self, lhs, rhs):
-        """
-        concat = concat, rep;
-        """
-        return _Concat(lhs, rhs)
-
-    @action
-    def alt(self, lhs, rhs):
-        """
-        alt = alt, _pipe, concat;
-        """
-        return _Alt(lhs, rhs)
+    Rule('range_elem', ('c',), lambda self, ch: ch),
+    Rule('range_elem', ('c', '-', 'c'), lambda self, lhs, _m, rhs: ''.join((chr(c) for c in xrange(ord(lhs), ord(rhs)+1)))),
+    Rule('range_elem', ('esc',), lambda self, ch: _escape_map.get(ch, ch)),
+    )
 
 def _regex_lexer(input):
     esc = False
@@ -143,94 +111,68 @@ def _regex_lexer(input):
             esc = False
         elif ch == '\\':
             esc = True
-        elif ch == '+':
-            yield ('plus', ch)
-        elif ch == '*':
-            yield ('star', ch)
-        elif ch == '[':
-            yield ('lbracket', ch)
-        elif ch == ']':
-            yield ('rbracket', ch)
-        elif ch == '(':
-            yield ('lparen', ch)
-        elif ch == ')':
-            yield ('rparen', ch)
-        elif ch == '-':
-            yield ('minus', ch)
-        elif ch == '|':
-            yield ('pipe', ch)
-        elif ch == '?':
-            yield ('q', ch)
-        elif ch == '^':
-            yield ('circumflex', ch)
+        elif ch in '+*[]()-|?^.':
+            yield (ch, ch)
         else:
-            yield ('ch', ch)
+            yield ('c', ch)
     if esc:
-        yield ('ch', ch)
+        yield ('c', '\\')
 
-class invertible_set:
-    def __init__(self, iterable, inv=False):
-        self.base = set(iterable)
-        self.inv = inv
+_regex_parser = None
 
-    def __repr__(self):
-        if self.inv:
-            return 'invertible_set(%r, inv=True)' % sorted(self.base)
-        else:
-            return 'invertible_set(%r)' % sorted(self.base)
+def parse_regex(input):
+    global _regex_parser
+    if _regex_parser is None:
+        _regex_parser = make_lrparser(_regex_grammar)
+    return _regex_parser.parse(_regex_lexer(input))
+
+def make_dfa_from_literal(lit, accept_label=True):
+    """
+    Create a DFA from a sequence. The FA will have `n+1` states,
+    where `n` is the length of the sequence. The states will be connected
+    to form a chain that begins with the only inital state and ends
+    with an accepting state labeled by the provided label.
+    """
+    fa = Fa()
+    init = fa.new_state()
+    fa.initial = set([init])
+    for ch in lit:
+        s = fa.new_state()
+        fa.new_edge(init, s, Lit([ch]))
+        init = s
+    fa.accept_labels = { init: accept_label }
+    return fa
 
 def make_enfa_from_regex(regex, accept_label):
     fa = Fa()
     initial = fa.new_state()
     fa.initial = set([initial])
-    acc = fa.new_state()
-    a = fa.new_state()
-    b = fa.new_state()
+    final = fa.new_state()
+    fa.accept_labels[final] = accept_label
 
-    fa.new_edge(initial, a)
-    fa.new_edge(a, b, regex)
-    fa.new_edge(b, acc)
-    fa.accept_labels[acc] = accept_label
-
-    # The NFA now looks like this
-    # 0 --epsilon--> 2 --regex--> 3 --epsilon--> 1
-
-    while True:
-        for edge in fa.get_edges():
-            source, target, r = edge.source, edge.target, edge.label
-            if isinstance(r, _Alt):
-                fa.remove_edge(edge)
-                a = fa.new_state(target)
-                fa.new_edge(source, target, r.lhs)
-                fa.new_edge(source, a, r.rhs)
-                break
-            elif isinstance(r, _Concat):
-                fa.remove_edge(edge)
-                a = fa.new_state()
-                fa.new_edge(source, a, r.lhs)
-                fa.new_edge(a, target, r.rhs)
-                break
-            elif isinstance(r, _Rep):
-                fa.remove_edge(edge)
-                a = fa.new_state()
-                fa.new_edge(source, a)
-                fa.new_edge(a, target)
-                fa.new_edge(a, a, r.term)
-                break
-            elif isinstance(r, _Empty):
-                fa.remove_edge(edge)
-                fa.new_edge(source, target)
-                break
+    def add_regex_edge(src, sink, r):
+        if isinstance(r, Alt):
+            for term in r.terms:
+                mid = fa.new_state()
+                add_regex_edge(src, mid, term)
+                fa.new_edge(mid, sink, None)
+        elif isinstance(r, Rep):
+            mid = fa.new_state()
+            fa.new_edge(src, mid, None)
+            fa.new_edge(mid, sink, None)
+            add_regex_edge(mid, mid, r.term)
+        elif isinstance(r, Cat):
+            if r.terms:
+                for term in r.terms[:-1]:
+                    mid = fa.new_state()
+                    add_regex_edge(src, mid, term)
+                    src = mid
+                add_regex_edge(src, sink, r.terms[-1])
         else:
-            break
+            fa.new_edge(src, sink, r)
 
+    add_regex_edge(initial, final, regex)
     return fa
-
-def regex_parser(input):
-    p = _RegexParser()
-    def _extract_second(token):
-        return token[1] if isinstance(token, tuple) else token
-    return p.parse(_regex_lexer(input), extract_value=_extract_second)
 
 if __name__ == '__main__':
     import doctest

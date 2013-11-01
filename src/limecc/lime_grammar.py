@@ -20,8 +20,8 @@ from lrparser import make_lrparser
 from simple_lexer import simple_lexer, Token
 import types, sys
 from lime_lexer import LimeLexer
-from fa import make_dfa_from_literal, union_fa, minimize_enfa
-from regex_parser import (regex_parser, make_enfa_from_regex)
+from fa import union_fa, minimize_enfa
+from regex_parser import parse_regex, make_enfa_from_regex, make_dfa_from_literal
 
 class LexDiscard:
     pass
@@ -331,7 +331,7 @@ def _build_multidfa(lex_rules, allowed_syms=None):
             continue
 
         if isinstance(rhs, LexRegex):
-            g2 = regex_parser(rhs.regex)
+            g2 = parse_regex(rhs.regex)
             fa = make_enfa_from_regex(g2, i)
         else:
             fa = make_dfa_from_literal(rhs.literal, i)

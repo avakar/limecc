@@ -10,53 +10,6 @@ and algorithms to convert between DFAs, NFAs and regexes.
 10
 """
 
-class _Lit:
-    def __init__(self, charset, inv=False):
-        self.charset = frozenset(charset)
-        self.inv = inv
-
-    def __repr__(self):
-        if self.inv:
-            return '_Lit(%r, inv=True)' % (sorted(self.charset),)
-        else:
-            return '_Lit(%r)' % (sorted(self.charset),)
-
-    def __nonzero__(self):
-        return bool(self.charset) or self.inv
-
-    def __sub__(self, other):
-        if not self.inv and not other.inv:
-            return _Lit(self.charset - other.charset, False)
-        elif self.inv and not other.inv:
-            return _Lit(self.charset | other.charset, True)
-        elif not self.inv and other.inv:
-            return _Lit(self.charset & other.charset, False)
-        else:
-            return _Lit(other.charset - self.charset, False)
-
-    def __and__(self, other):
-        if not self.inv and not other.inv:
-            return _Lit(self.charset & other.charset, False)
-        elif self.inv and not other.inv:
-            return _Lit(other.charset - self.charset, False)
-        elif not self.inv and other.inv:
-            return _Lit(self.charset - other.charset, False)
-        else:
-            return _Lit(self.charset | other.charset, True)
-
-    def __or__(self, other):
-        if not self.inv and not other.inv:
-            return _Lit(self.charset | other.charset, False)
-        elif self.inv and not other.inv:
-            return _Lit(self.charset - other.charset, True)
-        elif not self.inv and other.inv:
-            return _Lit(other.charset - self.charset, True)
-        else:
-            return _Lit(self.charset & other.charset, True)
-
-    def __contains__(self, ch):
-        return self.inv != (ch in self.charset)
-
 class State:
     """
     A state of a finite automaton. Contains references
@@ -166,23 +119,6 @@ class Fa:
         Returns a copy of the edge set.
         """
         return set(self.edges)
-
-def make_dfa_from_literal(lit, accept_label=True):
-    """
-    Create a DFA from a sequence. The FA will have `n+1` states,
-    where `n` is the length of the sequence. The states will be connected
-    to form a chain that begins with the only inital state and ends
-    with an accepting state labeled by the provided label.
-    """
-    fa = Fa()
-    init = fa.new_state()
-    fa.initial = set([init])
-    for ch in lit:
-        s = fa.new_state()
-        fa.new_edge(init, s, _Lit([ch]))
-        init = s
-    fa.accept_labels = { init: accept_label }
-    return fa
 
 def convert_enfa_to_dfa(enfa, accept_combine=min):
     """
