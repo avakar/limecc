@@ -16,7 +16,6 @@ class State:
     to the sets of incoming and outgoing edges.
     """
     def __init__(self):
-        self.inedges = set()
         self.outedges = set()
 
 class Edge:
@@ -83,26 +82,16 @@ class Fa:
         """
         edge = Edge(s1, s2, label)
         s1.outedges.add(edge)
-        s2.inedges.add(edge)
         self.edges.add(edge)
         return edge
 
-    def new_state(self, templ=None):
+    def new_state(self):
         """
         Creates a new state. If a template state is provided,
         the new state is a duplicate of the template.
         Returns the new state.
         """
         new_state = State()
-        if templ:
-            assert templ in self.states
-            old_edges = templ.inedges | templ.outedges
-            for edge in old_edges:
-                source = edge.source if edge.source != templ else new_state
-                target = edge.target if edge.target != templ else new_state
-                self.new_edge(source, target, edge.label)
-            if templ in self.accept_labels:
-                self.accept_labels[new_state] = self.accept_labels[templ]
         self.states.append(new_state)
         return new_state
 
@@ -112,13 +101,6 @@ class Fa:
         """
         self.edges.remove(edge)
         edge.source.outedges.remove(edge)
-        edge.target.inedges.remove(edge)
-
-    def get_edges(self):
-        """
-        Returns a copy of the edge set.
-        """
-        return set(self.edges)
 
 def convert_enfa_to_dfa(enfa, accept_combine=min):
     """
