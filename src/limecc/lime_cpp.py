@@ -11,7 +11,7 @@ def _make_lexer(g, dfas, class_name):
         states = []
         lstates = []
         state_map = {}
-        for i, state in enumerate(dfa.states):
+        for i, state in enumerate(dfa.reachable_states()):
             state_map[state] = i
             lstates.append(state)
         init_idx = state_map[next(iter(dfa.initial))]

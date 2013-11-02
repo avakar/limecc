@@ -1,6 +1,6 @@
 from grammar import Rule, Grammar
 from lrparser import make_lrparser
-from fa import Fa
+from fa import Fa, State
 
 class Lit:
     def __init__(self, charset, inv=False):
@@ -134,42 +134,42 @@ def make_dfa_from_literal(lit, accept_label=True):
     with an accepting state labeled by the provided label.
     """
     fa = Fa()
-    init = fa.new_state()
+    init = State()
     fa.initial = set([init])
     for ch in lit:
-        s = fa.new_state()
-        fa.new_edge(init, s, Lit([ch]))
+        s = State()
+        init.connect_to(s, Lit([ch]))
         init = s
     fa.accept_labels = { init: accept_label }
     return fa
 
 def make_enfa_from_regex(regex, accept_label):
     fa = Fa()
-    initial = fa.new_state()
+    initial = State()
     fa.initial = set([initial])
-    final = fa.new_state()
+    final = State()
     fa.accept_labels[final] = accept_label
 
     def add_regex_edge(src, sink, r):
         if isinstance(r, Alt):
             for term in r.terms:
-                mid = fa.new_state()
+                mid = State()
                 add_regex_edge(src, mid, term)
-                fa.new_edge(mid, sink, None)
+                mid.connect_to(sink, None)
         elif isinstance(r, Rep):
-            mid = fa.new_state()
-            fa.new_edge(src, mid, None)
-            fa.new_edge(mid, sink, None)
+            mid = State()
+            src.connect_to(mid, None)
+            mid.connect_to(sink, None)
             add_regex_edge(mid, mid, r.term)
         elif isinstance(r, Cat):
             if r.terms:
                 for term in r.terms[:-1]:
-                    mid = fa.new_state()
+                    mid = State()
                     add_regex_edge(src, mid, term)
                     src = mid
                 add_regex_edge(src, sink, r.terms[-1])
         else:
-            fa.new_edge(src, sink, r)
+            src.connect_to(sink, r)
 
     add_regex_edge(initial, final, regex)
     return fa

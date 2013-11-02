@@ -10,15 +10,7 @@ and algorithms to convert between DFAs, NFAs and regexes.
 10
 """
 
-class State:
-    """
-    A state of a finite automaton. Contains references
-    to the sets of incoming and outgoing edges.
-    """
-    def __init__(self):
-        self.outedges = set()
-
-class Edge:
+class _Edge:
     """
     An edge of a finite automaton. Leads between two FA states.
     Optionally, the edge can be labeled.
@@ -27,6 +19,17 @@ class Edge:
         self.source = f
         self.target = t
         self.label = label
+
+class State:
+    """
+    A state of a finite automaton. Contains references
+    to the sets of incoming and outgoing edges.
+    """
+    def __init__(self):
+        self.outedges = set()
+
+    def connect_to(self, target, label=None):
+        self.outedges.add(_Edge(self, target, label))
 
 class Fa:
     """
@@ -47,60 +50,26 @@ class Fa:
         """
         Initialized the FA to contain no states (and thus no edges).
         """
-        self.states = []
-        self.edges = set()
         self.initial = set()
         self.accept_labels = {}
-
-    def __str__(self):
-        res = []
-        state_indexes = dict([(state, i) for i, state in enumerate(self.states)])
-        for i, state in enumerate(self.states):
-            accept_label = self.accept_labels.get(state)
-            res.append('%s%d' % ('%r ' % accept_label if accept_label is not None else ' ', i))
-            if state in self.initial:
-                res.append('initial')
-            for edge in state.outedges:
-                res.append('    %d %r' % (
-                    state_indexes[edge.target],
-                    edge.label if edge.label is not None else 'epsilon'))
-        return '\n'.join(res)
 
     def add_fa(self, fa):
         """
         Adds the states and edges of another FA to this FA. The remote
         FA should be thrown away right after the joining.
         """
-        self.states.extend(fa.states)
-        self.edges.update(fa.edges)
         self.accept_labels.update(fa.accept_labels)
 
-    def new_edge(self, s1, s2, label=None):
-        """
-        Joins two states with a new edge and applies an optional label
-        to it. Returns the new edge.
-        """
-        edge = Edge(s1, s2, label)
-        s1.outedges.add(edge)
-        self.edges.add(edge)
-        return edge
-
-    def new_state(self):
-        """
-        Creates a new state. If a template state is provided,
-        the new state is a duplicate of the template.
-        Returns the new state.
-        """
-        new_state = State()
-        self.states.append(new_state)
-        return new_state
-
-    def remove_edge(self, edge):
-        """
-        Removes an edge from the FA.
-        """
-        self.edges.remove(edge)
-        edge.source.outedges.remove(edge)
+    def reachable_states(self):
+        res = set(self.initial)
+        q = list(self.initial)
+        while q:
+            state = q.pop()
+            for edge in state.outedges:
+                if edge.target not in res:
+                    res.add(edge.target)
+                    q.append(edge.target)
+        return res
 
 def convert_enfa_to_dfa(enfa, accept_combine=min):
     """
@@ -130,7 +99,7 @@ def convert_enfa_to_dfa(enfa, accept_combine=min):
     def _get_state(states):
         states = frozenset(states)
         if states not in state_map:
-            res = dfa.new_state()
+            res = State()
             state_map[states] = res
             inv_state_map[res] = states
         else:
@@ -163,7 +132,7 @@ def convert_enfa_to_dfa(enfa, accept_combine=min):
                     current_set = s
                     targets.add(target)
             dfa_target = _get_state(_epsilon_closure(targets))
-            dfa.new_edge(current, dfa_target, current_set)
+            current.connect_to(dfa_target, current_set)
             if dfa_target not in processed:
                 processed.add(dfa_target)
                 q.append(dfa_target)
@@ -174,7 +143,7 @@ def convert_enfa_to_dfa(enfa, accept_combine=min):
                     del edges[target]
                 else:
                     edges[target] = reduced
-    for state in dfa.states:
+    for state in dfa.reachable_states():
         enfa_states = inv_state_map[state]
         for enfa_state in enfa_states:
             if enfa_state not in enfa.accept_labels:
@@ -197,7 +166,7 @@ def minimize_enfa(fa, accept_combine=min):
     # initialize the partition by splitting the state according to the accept label
     no_accept = set()
     accept_label_map = {}
-    for state in fa.states:
+    for state in fa.reachable_states():
         if state not in fa.accept_labels:
             no_accept.add(state)
         else:
@@ -277,7 +246,7 @@ def minimize_enfa(fa, accept_combine=min):
 
     new_state_map = {}
     for state_class in partition:
-        new_state = new_fa.new_state()
+        new_state = State()
         new_state_map[state_class] = new_state
 
     for state_class, source in new_state_map.iteritems():
@@ -296,7 +265,7 @@ def minimize_enfa(fa, accept_combine=min):
                 target_map[new_state_map[target]] |= charset
 
         for target, charset in target_map.iteritems():
-            new_fa.new_edge(source, target, charset)
+            source.connect_to(target, charset)
 
     new_fa.initial = set([new_state_map[partition_map[next(iter(fa.initial))]]])
     for state, accept_label in fa.accept_labels.iteritems():
@@ -308,12 +277,12 @@ def union_fa(fas):
     Builds a FA that accepts a union of languages of the provided FAs.
     """
     final_fa = Fa()
-    final_init = final_fa.new_state()
+    final_init = State()
     final_fa.initial = set([final_init])
     for fa in fas:
         final_fa.add_fa(fa)
         for init in fa.initial:
-            final_fa.new_edge(final_init, init)
+            final_init.connect_to(init)
     return final_fa
 
 if __name__ == '__main__':
