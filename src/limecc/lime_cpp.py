@@ -1,5 +1,4 @@
 from lime_grammar import LexDiscard, LexRegex
-from regex_parser import make_dfa_from_literal
 
 def _make_lexer(g, dfas, class_name):
     multiedges = []
@@ -39,8 +38,8 @@ def _make_lexer(g, dfas, class_name):
                     labels.append((seq_start, seq_end))
 
                 edges.append((label_first, len(labels), state_map[edge.target], "true" if edge.label.inv else "false"))
-            if state in dfa.accept_labels:
-                accept_label = '&stub_%d' % dfa.accept_labels[state]
+            if state.accept is not None:
+                accept_label = '&stub_%d' % state.accept
             else:
                 accept_label = '0'
             states.append((edge_first, len(edges), accept_label))

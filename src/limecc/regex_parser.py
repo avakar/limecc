@@ -133,22 +133,17 @@ def make_dfa_from_literal(lit, accept_label=True):
     to form a chain that begins with the only inital state and ends
     with an accepting state labeled by the provided label.
     """
-    fa = Fa()
-    init = State()
-    fa.initial = set([init])
-    for ch in lit:
+    final = State(accept=accept_label)
+    for ch in reversed(lit):
         s = State()
-        init.connect_to(s, Lit([ch]))
-        init = s
-    fa.accept_labels = { init: accept_label }
-    return fa
+        final.connect_to(final, Lit([ch]))
+        final = s
+
+    return Fa(final)
 
 def make_enfa_from_regex(regex, accept_label):
-    fa = Fa()
     initial = State()
-    fa.initial = set([initial])
-    final = State()
-    fa.accept_labels[final] = accept_label
+    final = State(accept=accept_label)
 
     def add_regex_edge(src, sink, r):
         if isinstance(r, Alt):
@@ -172,7 +167,7 @@ def make_enfa_from_regex(regex, accept_label):
             src.connect_to(sink, r)
 
     add_regex_edge(initial, final, regex)
-    return fa
+    return Fa(initial)
 
 if __name__ == '__main__':
     import doctest
