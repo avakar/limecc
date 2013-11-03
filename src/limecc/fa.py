@@ -22,7 +22,7 @@ class State:
     def connect_to(self, target, label=None):
         self.outedges.add((target, label))
 
-class Fa:
+class Automaton:
     """
     A finite automaton consists of a set of states and a set of edges
     that interconnect them.
@@ -93,7 +93,7 @@ def convert_enfa_to_dfa(enfa, accept_combine=_combine):
         return res
 
     initial = _get_state(_epsilon_closure(enfa.initial))
-    dfa = Fa(initial)
+    dfa = Automaton(initial)
     q = [initial]
     processed = set(q)
     while q:
@@ -243,14 +243,14 @@ def minimize_enfa(fa, accept_combine=_combine):
         for target, charset in target_map.iteritems():
             source.connect_to(target, charset)
 
-    return Fa(new_state_map[partition_map[next(iter(fa.initial))]])
+    return Automaton(new_state_map[partition_map[next(iter(fa.initial))]])
 
 def union_fa(fas):
     """
     Builds a FA that accepts a union of languages of the provided FAs.
     """
     final_init = State()
-    final_fa = Fa(final_init)
+    final_fa = Automaton(final_init)
     for fa in fas:
         for init in fa.initial:
             final_init.connect_to(init)

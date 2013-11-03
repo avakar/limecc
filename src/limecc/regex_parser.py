@@ -1,6 +1,6 @@
 from grammar import Rule, Grammar
 from lrparser import make_lrparser
-from fa import Fa, State
+from fa import Automaton, State
 
 class Lit:
     def __init__(self, charset, inv=False):
@@ -139,7 +139,7 @@ def make_dfa_from_literal(lit, accept_label=True):
         final.connect_to(final, Lit([ch]))
         final = s
 
-    return Fa(final)
+    return Automaton(final)
 
 def make_enfa_from_regex(regex, accept_label):
     initial = State()
@@ -167,7 +167,7 @@ def make_enfa_from_regex(regex, accept_label):
             src.connect_to(sink, r)
 
     add_regex_edge(initial, final, regex)
-    return Fa(initial)
+    return Automaton(initial)
 
 if __name__ == '__main__':
     import doctest
