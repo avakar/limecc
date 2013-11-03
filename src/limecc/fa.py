@@ -1,14 +1,167 @@
 """
-Finite automaton engine. Contains classes to represent FAs
-and algorithms to convert between DFAs, NFAs and regexes.
+This module provides means to represent finite automata
+and a set of routines to manipulate them.
 
->>> nature_fa = make_dfa_from_literal('nature')
->>> endnature_fa = make_dfa_from_literal('endnature')
->>> union = union_fa([nature_fa, endnature_fa])
->>> fa = minimize_enfa(union)
->>> len(fa.states)
-10
+States
+------
+A state of an automaton is represented by objects of type
+`State`. States contain a set of edges connecting the state
+to another (possibly the original). States are also
+labeled by an accept label, which defaults to False.
+
+    >>> s = State(accept=True)
+    >>> print s
+    <State, 0 outgoing, 1 reachable, accept=True>
+
+    >>> s = State()
+    >>> print s
+    <State, 0 outgoing, 1 reachable>
+    >>> s.reachable_states()
+    [<State, 0 outgoing, 1 reachable>]
+    >>> list(s.outedges)
+    []
+
+Edges can be labeled by arbitrary objects, which should
+represent the set of input terminals for which the edge
+is enabled. Various routines that manipulate automata
+(e.g. `union_fa`, `minimize_fa` and so on) require that
+the labels
+
+ 1. are `None` for epsilon edges, and
+ 2. all other edges are labeled by objects that support
+    operators `&` that computes intersection, `|`
+    that computes union, `-` that computes difference,
+    can be coverted to bool and support `in` and `not in`
+    operators.
+
+States can be interconnected using the `connect_to` method.
+
+    >>> s2 = State(accept=True)
+    >>> s.connect_to(s2, label=set('abc'))
+    >>> sorted(s.reachable_states())
+    [<State, 1 outgoing, 2 reachable>, <State, 0 outgoing, 1 reachable, accept=True>]
+
+You can visualize a graph starting at a specific state by
+calling `format_graph` or `print_graph` method.
+
+    >>> print s.format_graph()
+    state 0
+        edge to 1 over set(['a', 'c', 'b'])
+    state 1
+        accept True
+
+Printing state graphs can also be more generically peformed
+using the `format_reachable_states` functions.
+
+    >>> print format_reachable_states([s], mark_initial=True)
+    state 0 initial
+        edge to 1 over set(['a', 'c', 'b'])
+    state 1
+        accept True
+
+Multiple initial states can be specified.
+
+    >>> print format_reachable_states([s, s2], mark_initial=True)
+    state 0 initial
+        edge to 1 over set(['a', 'c', 'b'])
+    state 1 initial
+        accept True
+
+Automata
+--------
+Automata are simple objects of type `Automaton`, which merely
+hold a set of initial states. Automata can share states.
+
+    >>> a = Automaton(s)
+    >>> print a
+    <Automaton, 1 initial, 2 reachable>
+    >>> print a.format_graph()
+    state 0 initial
+        edge to 1 over set(['a', 'c', 'b'])
+    state 1
+        accept True
+
+You can always get the list of states of an automaton using
+the `reachable_states` method.
+
+    >>> print sorted(a.reachable_states())
+    [<State, 1 outgoing, 2 reachable>, <State, 0 outgoing, 1 reachable, accept=True>]
+
+An automaton is in a DFA form if
+
+ 1. it has exactly one initial state,
+ 2. there are no reachable epsilong edges, and
+ 3. for each state and each pair of that state's outgoing edges,
+    the intersection of the edges' labels is empty, i.e. for edges
+    `l1` and `l2`, the expression `bool(l1 & l2)` yields `False`.
+
+You can convert an arbitrary automaton to DFA form with
+`convert_enfa_to_dfa`. Minimizing an automaton with `minimize_enfa`
+will also yield an automaton in a DFA form. Both routines
+yield automata that do not share states with the input automata.
+
+    >>> s3 = State(accept=True)
+    >>> s2.connect_to(s3, set('abc'))
+    >>> s2.connect_to(s2, set('abc'))
+    >>> print a.format_graph()
+    state 0 initial
+        edge to 1 over set(['a', 'c', 'b'])
+    state 1
+        edge to 2 over set(['a', 'c', 'b'])
+        edge to 1 over set(['a', 'c', 'b'])
+        accept True
+    state 2
+        accept True
+    >>> a = minimize_enfa(a)
+    >>> print a.format_graph()
+    state 0 initial
+        edge to 1 over set(['a', 'c', 'b'])
+    state 1
+        edge to 1 over set(['a', 'c', 'b'])
+        accept True
 """
+
+import sys
+
+def _reachable_states(initial_set):
+    q = list(initial_set)
+    res = set(q)
+    while q:
+        state = q.pop()
+        for target, label in state.outedges:
+            if target not in res:
+                res.add(target)
+                q.append(target)
+    return list(res)
+
+def _bfs_walk(initial_set):
+    visited = set(initial_set)
+    q = list(initial_set)
+    while q:
+        state = q.pop(0)
+        yield state
+        for target, label in state.outedges:
+            if target not in visited:
+                visited.add(target)
+                q.append(target)
+
+def format_reachable_states(initial_set, mark_initial=False):
+    state_list = list(enumerate(_bfs_walk(initial_set)))
+    state_map = {}
+    for i, state in state_list:
+        state_map[state] = i
+    res = []
+    for i, state in state_list:
+        res.append('state %d' % i)
+        res.append(' initial\n' if mark_initial and state in initial_set else '\n')
+        for target, label in state.outedges:
+            if label is None:
+                res.append('    edge to %d\n' % (state_map[target],))
+            else:
+                res.append('    edge to %d over %s\n' % (state_map[target], str(label)))
+        if state.accept is not None:
+            res.append('    accept %s\n' % str(state.accept))
+    return ''.join(res).rstrip()
 
 class State:
     """
@@ -16,11 +169,26 @@ class State:
     to the sets of incoming and outgoing edges.
     """
     def __init__(self, accept=None):
-        self.outedges = set()
+        self.outedges = []
         self.accept = accept
 
+    def __repr__(self):
+        if self.accept is not None:
+            return '<State, %d outgoing, %d reachable, accept=%r>' % (len(self.outedges), len(self.reachable_states()), self.accept)
+        else:
+            return '<State, %d outgoing, %d reachable>' % (len(self.outedges), len(self.reachable_states()))
+
     def connect_to(self, target, label=None):
-        self.outedges.add((target, label))
+        self.outedges.append((target, label))
+
+    def format_graph(self):
+        return format_reachable_states([self])
+
+    def print_graph(self, file=sys.stderr):
+        print >>file, self.format_graph()
+
+    def reachable_states(self):
+        return _reachable_states([self])
 
 class Automaton:
     """
@@ -40,25 +208,19 @@ class Automaton:
     def __init__(self, *initial):
         self.initial = frozenset(initial)
 
+    def __repr__(self):
+        return '<Automaton, %d initial, %d reachable>' % (len(self.initial), len(_reachable_states(self.initial)))
+
+    def format_graph(self):
+        return format_reachable_states(self.initial, mark_initial=True)
+
+    def print_graph(self, file=sys.stdout):
+        print >>file, self.format_graph()
+
     def reachable_states(self):
-        res = set(self.initial)
-        q = list(self.initial)
-        while q:
-            state = q.pop()
-            for target, label in state.outedges:
-                if target not in res:
-                    res.add(target)
-                    q.append(target)
-        return res
+        return _reachable_states(self.initial)
 
-def _combine(lhs, rhs):
-    if lhs is None:
-        return rhs
-    if rhs is None:
-        return lhs
-    return min(lhs, rhs)
-
-def convert_enfa_to_dfa(enfa, accept_combine=_combine):
+def convert_enfa_to_dfa(enfa, accept_combine=min):
     """
     Converts an NFA with epsilon edges (labeled with None) to a DFA.
     The function expects edge labels that are not None to be sets
@@ -129,12 +291,21 @@ def convert_enfa_to_dfa(enfa, accept_combine=_combine):
                     del edges[target]
                 else:
                     edges[target] = reduced
+
+    def precombine(lhs, rhs):
+        if lhs is None:
+            return rhs
+        if rhs is None:
+            return lhs
+        if lhs == rhs:
+            return lhs
+        return accept_combine(lhs, rhs)
+
     for state in dfa.reachable_states():
-        enfa_states = inv_state_map[state]
-        state.accept = reduce(accept_combine, (enfa_state.accept for enfa_state in enfa_states))
+        state.accept = reduce(precombine, (enfa_state.accept for enfa_state in inv_state_map[state]))
     return dfa
 
-def minimize_enfa(fa, accept_combine=_combine):
+def minimize_enfa(fa, accept_combine=min):
     """
     Converts an NFA with epsilon edges to a minimal DFA. The requirements
     on the edge and accept labels are the same as with
@@ -249,12 +420,10 @@ def union_fa(fas):
     """
     Builds a FA that accepts a union of languages of the provided FAs.
     """
-    final_init = State()
-    final_fa = Automaton(final_init)
+    initial = set()
     for fa in fas:
-        for init in fa.initial:
-            final_init.connect_to(init)
-    return final_fa
+        initial.update(fa.initial)
+    return Automaton(*initial)
 
 if __name__ == '__main__':
     import doctest
