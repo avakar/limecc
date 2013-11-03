@@ -5,7 +5,7 @@ This is the main script that accepts the grammar file and generates
 the C++ header file containing the parser and potentially the lexer.
 """
 
-from lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime
+from lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError
 from lrparser import InvalidGrammarError, ActionConflictError
 from fa import minimize_enfa
 import sys, os.path
@@ -76,6 +76,9 @@ SNIPPET ~= <an arbitrary text enclosed in braces>.
                 with open(output, 'w') as fout:
                     fout.write(lime_cpp(p))
 
+        except LexerConflictError, e:
+            print e.message
+            return 1
         except ActionConflictError, e:
             print e.message
             e.print_trace()

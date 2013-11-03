@@ -23,6 +23,12 @@ from lime_lexer import LimeLexer
 from fa import union_fa, minimize_enfa
 from regex_parser import parse_regex, make_enfa_from_regex, make_dfa_from_literal
 
+class LexerConflictError(Exception):
+    def __init__(self, rule1, rule2):
+        Exception.__init__(self, 'Conflict merging %r and %r' % (rule1, rule2))
+        self.rule1 = rule1
+        self.rule2 = rule2
+
 class LexDiscard:
     pass
 
@@ -348,7 +354,7 @@ def _build_multidfa(lex_rules, allowed_syms=None):
         lhs_prio = priorities[lhs]
         rhs_prio = priorities[rhs]
         if lhs_prio == rhs_prio:
-            raise RuntimeError('Conflict merging %r and %r' % (lex_rules[lhs][1][0], lex_rules[rhs][1][0]))
+            raise LexerConflictError(lex_rules[lhs][1][0], lex_rules[rhs][1][0])
         return lhs if lhs_prio > rhs_prio else rhs
 
     enfa = union_fa(fas)

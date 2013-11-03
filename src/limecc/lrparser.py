@@ -169,7 +169,7 @@ class InvalidGrammarError(Exception):
 class ActionConflictError(Exception):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
     def __init__(self, message, conflicting_state, states, g, item1, item2):
-        InvalidGrammarError.__init__(self, message)
+        Exception.__init__(self, message)
         self.states = states
         self.conflicting_state = conflicting_state
         self.g = g
