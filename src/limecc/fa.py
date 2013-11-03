@@ -10,16 +10,6 @@ and algorithms to convert between DFAs, NFAs and regexes.
 10
 """
 
-class _Edge:
-    """
-    An edge of a finite automaton. Leads between two FA states.
-    Optionally, the edge can be labeled.
-    """
-    def __init__(self, f, t, label=None):
-        self.source = f
-        self.target = t
-        self.label = label
-
 class State:
     """
     A state of a finite automaton. Contains references
@@ -30,7 +20,7 @@ class State:
         self.accept = accept
 
     def connect_to(self, target, label=None):
-        self.outedges.add(_Edge(self, target, label))
+        self.outedges.add((target, label))
 
 class Fa:
     """
@@ -55,10 +45,10 @@ class Fa:
         q = list(self.initial)
         while q:
             state = q.pop()
-            for edge in state.outedges:
-                if edge.target not in res:
-                    res.add(edge.target)
-                    q.append(edge.target)
+            for target, label in state.outedges:
+                if target not in res:
+                    res.add(target)
+                    q.append(target)
         return res
 
 def _combine(lhs, rhs):
@@ -80,16 +70,15 @@ def convert_enfa_to_dfa(enfa, accept_combine=_combine):
         res = set(q)
         while q:
             state = q.pop()
-            for edge in state.outedges:
-                if edge.label is not None:
+            for target, label in state.outedges:
+                if label is not None:
                     continue
-                if edge.target in res:
+                if target in res:
                     continue
-                q.append(edge.target)
-                res.add(edge.target)
+                q.append(target)
+                res.add(target)
         return res
 
-    dfa = Fa()
     state_map = {}
     inv_state_map = {}
 
@@ -112,12 +101,12 @@ def convert_enfa_to_dfa(enfa, accept_combine=_combine):
         state_set = inv_state_map[current]
         edges = {}
         for state in state_set:
-            for edge in state.outedges:
-                if edge.label is not None:
-                    if edge.target not in edges:
-                        edges[edge.target] = edge.label
+            for target, label in state.outedges:
+                if label is not None:
+                    if target not in edges:
+                        edges[target] = label
                     else:
-                        edges[edge.target] &= edge.label
+                        edges[target] &= label
         while edges:
             it = edges.iteritems()
             target, s = next(it)
@@ -207,13 +196,13 @@ def minimize_enfa(fa, accept_combine=_combine):
 
             edge_map = {}
             for state in state_class:
-                for edge in state.outedges:
-                    edge_map[edge] = edge.label
+                for target, label in state.outedges:
+                    edge_map[(state, target)] = label
 
             for edges, charset in _get_maximum_charsets(edge_map):
                 target_map = {}
-                for edge in edges:
-                    target_map.setdefault(partition_map[edge.target], set()).add(edge.source)
+                for source, target in edges:
+                    target_map.setdefault(partition_map[target], set()).add(source)
                 for part, source_set in target_map.iteritems():
                     for source, siblings in sibling_map.iteritems():
                         if source in source_set:
@@ -237,15 +226,15 @@ def minimize_enfa(fa, accept_combine=_combine):
         new_state_map[state_class] = new_state
 
     for state_class, source in new_state_map.iteritems():
-        edge_map = {}
+        target_labels = {}
         for state in state_class:
-            for edge in state.outedges:
-                edge_map[edge] = edge.label
+            for target, label in state.outedges:
+                target_labels[target] = label
 
         target_map = {}
-        for edges, charset in _get_maximum_charsets(edge_map):
-            target = partition_map[next(iter(edges)).target]
-            assert all((partition_map[edge.target] == target for edge in edges))
+        for targets, charset in _get_maximum_charsets(target_labels):
+            target = partition_map[next(iter(targets))]
+            assert all((partition_map[tg] == target for tg in targets))
             if new_state_map[target] not in target_map:
                 target_map[new_state_map[target]] = charset
             else:

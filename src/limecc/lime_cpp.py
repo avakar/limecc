@@ -21,11 +21,11 @@ def _make_lexer(g, dfas, class_name):
 
         for state in lstates:
             edge_first = len(edges)
-            for edge in state.outedges:
+            for target, label in state.outedges:
                 label_first = len(labels)
                 seq_start = seq_end = None
 
-                for ch in sorted(edge.label.charset):
+                for ch in sorted(label.charset):
                     if seq_start is None:
                         seq_start = seq_end = ch
                         continue
@@ -37,7 +37,7 @@ def _make_lexer(g, dfas, class_name):
                 if seq_start is not None:
                     labels.append((seq_start, seq_end))
 
-                edges.append((label_first, len(labels), state_map[edge.target], "true" if edge.label.inv else "false"))
+                edges.append((label_first, len(labels), state_map[target], "true" if label.inv else "false"))
             if state.accept is not None:
                 accept_label = '&stub_%d' % state.accept
             else:
