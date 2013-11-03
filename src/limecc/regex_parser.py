@@ -7,6 +7,9 @@ class Lit:
         self.charset = frozenset(charset)
         self.inv = inv
 
+    def __str__(self):
+        return ('[^%s]' if self.inv else '[%s]') % repr(''.join(sorted(self.charset))).lstrip('\'').rstrip('\'')
+
     def __repr__(self):
         if self.inv:
             return 'Lit(%r, inv=True)' % (sorted(self.charset),)
@@ -74,6 +77,14 @@ _escape_map = {
     'd': '0123456789',
     's': ' \n\r\t\v\f',
     'w': 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_',
+
+    'a': '\a',
+    'b': '\b',
+    't': '\t',
+    'n': '\n',
+    'r': '\r',
+    'f': '\f',
+    'v': '\v',
     }
 
 _regex_grammar = Grammar(
@@ -136,7 +147,7 @@ def make_dfa_from_literal(lit, accept_label=True):
     final = State(accept=accept_label)
     for ch in reversed(lit):
         s = State()
-        final.connect_to(final, Lit([ch]))
+        s.connect_to(final, Lit([ch]))
         final = s
 
     return Automaton(final)

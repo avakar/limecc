@@ -39,6 +39,9 @@ class LexRegex:
     def __hash__(self):
         return hash(self.regex)
 
+    def __str__(self):
+        return '{%s}' % self.regex
+
     def __repr__(self):
         return 'LexRegex(%r)' % self.regex
 
@@ -59,7 +62,7 @@ class LexLiteral:
         return 'LexLiteral(%r)' % self.literal
 
     def __str__(self):
-        return repr(self.literal)
+        return '"' + self.literal + '"'
 
 class _LimeLexerClassify:
     def __init__(self):
@@ -325,19 +328,31 @@ def _lexparse(p, text, **kw):
 
 def _build_multidfa(lex_rules, allowed_syms=None):
     fas = []
+    rule_fa_list = []
+    priorities = {}
     for i, lex_rule in enumerate(lex_rules):
         (lhs, lhs_name), (rhs, rhs_name), action, pos = lex_rule
         if allowed_syms is not None and lhs not in allowed_syms:
             continue
-
         if isinstance(rhs, LexRegex):
             g2 = parse_regex(rhs.regex)
             fa = make_enfa_from_regex(g2, i)
+            priorities[i] = 0
         else:
             fa = make_dfa_from_literal(rhs.literal, i)
+            priorities[i] = 1
         fas.append(fa)
+        rule_fa_list.append((lhs, rhs, fa))
+
+    def _combine_accept_labels(lhs, rhs):
+        lhs_prio = priorities[lhs]
+        rhs_prio = priorities[rhs]
+        if lhs_prio == rhs_prio:
+            raise RuntimeError('Conflict merging %r and %r' % (lex_rules[lhs][1][0], lex_rules[rhs][1][0]))
+        return lhs if lhs_prio > rhs_prio else rhs
+
     enfa = union_fa(fas)
-    return minimize_enfa(enfa)
+    return rule_fa_list, minimize_enfa(enfa, _combine_accept_labels)
 
 def make_lime_parser(g, **kw):
     p = make_lrparser(g, **kw)
@@ -362,11 +377,11 @@ def make_lime_parser(g, **kw):
             else:
                 state.lexer_id = lex_map[terms]
 
-        p.lexers = [_build_multidfa(g.lex_rules, set(term_list)) for term_list in term_lists]
+        p.lexers = [_build_multidfa(g.lex_rules, set(term_list))[1] for term_list in term_lists]
         for state in p.states:
             state.lexer = p.lexers[state.lexer_id]
     else:
-        p.lexer = _build_multidfa(g.lex_rules)
+        p.lex_dfas, p.lexer = _build_multidfa(g.lex_rules)
 
     p.lexparse = types.MethodType(_lexparse, p)
     return p
