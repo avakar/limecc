@@ -164,10 +164,6 @@ def format_reachable_states(initial_set, mark_initial=False):
     return ''.join(res).rstrip()
 
 class State:
-    """
-    A state of a finite automaton. Contains references
-    to the sets of incoming and outgoing edges.
-    """
     def __init__(self, accept=None):
         self.outedges = []
         self.accept = accept
@@ -191,20 +187,6 @@ class State:
         return _reachable_states([self])
 
 class Automaton:
-    """
-    A finite automaton consists of a set of states and a set of edges
-    that interconnect them.
-    
-    Edges can be labeled. The labels are in now way interpreted,
-    some algorithms, however, expect that the labels can be combined
-    using the standard set operators &, | and -. Furthermore,
-    epsilon edges are supposed to be labeled with None.
-
-    The FA can have zero or more initial states and zero or more accepting
-    states. The accepting states are labeled -- as with edge labels,
-    some algorithms expect accept labels to behave like sets. Accepting
-    states are stored in a dict that maps them to the corresponding label.
-    """
     def __init__(self, *initial):
         self.initial = frozenset(initial)
 
