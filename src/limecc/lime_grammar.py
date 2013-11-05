@@ -161,6 +161,7 @@ class LimeGrammar:
         g.token_comments = {}
         g.user_include = None
         g.token_type = None # XXX: perhaps default_type?
+        g.tests = []
         return g
 
     def _grammar_kw_user_include(self, g, _kw, incl):
@@ -262,6 +263,26 @@ class LimeGrammar:
         g.token_comments = pg.token_comments
         g.user_include = pg.user_include
         g.token_type = pg.token_type
+        g.tests = pg.tests
+        return g
+
+    def _test_list_new(self):
+        return []
+
+    def _test_list_id(self, tl, id):
+        tl.append(id)
+        return tl
+
+    def _test_list_lit(self, tl, lit):
+        tl.append(LexLiteral(lit))
+        return tl
+
+    def _grammar_kw_test_accept(self, g, _kw, sym, tl, _dot):
+        g.tests.append((sym, tl, True))
+        return g
+
+    def _grammar_kw_test_reject(self, g, _kw, _not, sym, tl, _dot):
+        g.tests.append((sym, tl, False))
         return g
 
     grammar = Grammar(
@@ -270,6 +291,8 @@ class LimeGrammar:
         Rule('grammar', ('grammar', 'kw_include', 'SNIPPET'), action=_grammar_kw_user_include),
         Rule('grammar', ('grammar', 'kw_token_type', 'SNIPPET'), action=_grammar_kw_token_type),
         Rule('grammar', ('grammar', 'kw_context_lexer'), action=_grammar_kw_context_lexer),
+        Rule('grammar', ('grammar', 'kw_test', 'ID', 'test_list', '.'), action=_grammar_kw_test_accept),
+        Rule('grammar', ('grammar', 'kw_test', '~', 'ID', 'test_list', '.'), action=_grammar_kw_test_reject),
         Rule('grammar', ('grammar', 'type_stmt'), action=_grammar_type),
         Rule('grammar', ('grammar', 'rule_stmt'), action=_grammar_rule),
         Rule('grammar', ('grammar', 'lex_stmt'), action=_grammar_lex),
@@ -292,7 +315,11 @@ class LimeGrammar:
         Rule('named_item', ('ID',), action=_named_item),
         Rule('named_item', ('ID', '(', 'ID', ')'), action=_named_item_with_name),
         Rule('named_item', ('QL',), action=_named_item_lit),
-        Rule('named_item', ('SNIPPET',), action=_named_item_snippet)
+        Rule('named_item', ('SNIPPET',), action=_named_item_snippet),
+        Rule('test_list', (), action=_test_list_new),
+        Rule('test_list', ('test_list', 'ID'), action=_test_list_id),
+        Rule('test_list', ('test_list', 'SNIPPET'), action=_test_list_lit),
+        Rule('test_list', ('test_list', 'QL'), action=_test_list_lit),
         )
 
 def _lime_lexer(input, filename=None):

@@ -25,6 +25,8 @@ def _main():
     opts.add_option('--print-dfas', action="store_true", default=False, help='Show the states of the lexer\'s DFA')
     opts.add_option('--print-states', action="store_true", dest="print_states", default=False, help='Show the states of the LR automaton')
     opts.add_option('--print-lime-grammar', action="store_true", dest="print_lime_grammar", default=False, help='Prints the grammar of the lime language')
+    opts.add_option('--no-tests', action="store_true", default=False, help='Do not run tests')
+    opts.add_option('--tests-only', action="store_true", default=False, help='Do not generate the parser, only run tests')
 
     if len(sys.argv) < 2:
         opts.print_help()
@@ -56,6 +58,10 @@ SNIPPET ~= <an arbitrary text enclosed in braces>.
             g = parse_lime_grammar(input, filename=fname)
             p = make_lime_parser(g, keep_states=options.print_states)
 
+            #if not options.no_tests:
+            #    for test in g.tests:
+            #        print test
+
             if options.print_dfas:
                 for lhs, rhs, fa in p.lex_dfas:
                     print lhs, rhs
@@ -71,7 +77,7 @@ SNIPPET ~= <an arbitrary text enclosed in braces>.
             if options.parse:
                 print p.lexparse(options.parse, shift_visitor=print_shift, postreduce_visitor=print_reduce)
 
-            if (not options.print_dfas and not options.print_states and not options.parse) or options.output:
+            if (not options.tests_only and not options.print_dfas and not options.print_states and not options.parse) or options.output:
                 from lime_cpp import lime_cpp
                 with open(output, 'w') as fout:
                     fout.write(lime_cpp(p))
