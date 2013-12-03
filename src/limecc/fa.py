@@ -186,6 +186,9 @@ class State:
     def reachable_states(self):
         return _reachable_states([self])
 
+    def bfs_walk(self):
+        return _bfs_walk([self])
+
 class Automaton:
     def __init__(self, *initial):
         self.initial = frozenset(initial)
@@ -201,6 +204,9 @@ class Automaton:
 
     def reachable_states(self):
         return _reachable_states(self.initial)
+
+    def bfs_walk(self):
+        return _bfs_walk(self.initial)
 
 def convert_enfa_to_dfa(enfa, accept_combine=min):
     """
@@ -278,8 +284,6 @@ def convert_enfa_to_dfa(enfa, accept_combine=min):
         if lhs is None:
             return rhs
         if rhs is None:
-            return lhs
-        if lhs == rhs:
             return lhs
         return accept_combine(lhs, rhs)
 

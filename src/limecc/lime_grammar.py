@@ -29,9 +29,6 @@ class LexerConflictError(Exception):
         self.rule1 = rule1
         self.rule2 = rule2
 
-class LexDiscard:
-    pass
-
 class LexRegex:
     def __init__(self, regex):
         self.regex = regex
@@ -136,20 +133,12 @@ class _ParsedGrammar:
 class LimeGrammar:
     def __init__(self):
         self._implicit_tokens = {}
-        self._processed_implicit_tokens = set()
         self._parser = None
 
     def parse(self, *args, **kw):
         if self._parser is None:
             self._parser = make_lrparser(self.grammar)
         return self._parser.parse(*args, context=self, **kw)
-
-    def _update_implicit_tokens(self, g):
-        for lex_rhs, token_name in self._implicit_tokens.iteritems():
-            if token_name not in self._processed_implicit_tokens:
-                g.lex_rules.append(((token_name, None), (lex_rhs, None), None, None))
-                g.token_comments[token_name] = lex_rhs
-                self._processed_implicit_tokens.add(token_name)
 
     def _grammar_empty(self):
         g = _ParsedGrammar()
@@ -158,10 +147,11 @@ class LimeGrammar:
         g.context_lexer = False
         g.lex_rules = []
         g.sym_annot = {}
-        g.token_comments = {}
         g.user_include = None
         g.token_type = None # XXX: perhaps default_type?
         g.tests = []
+        g.discards = []
+        g.root = None
         return g
 
     def _grammar_kw_user_include(self, g, _kw, incl):
@@ -184,43 +174,16 @@ class LimeGrammar:
 
     def _grammar_rule(self, g, rule):
         g.rules.append(rule)
-        self._update_implicit_tokens(g)
+        g.tokens = [lex_rhs for lex_rhs, tok_id in sorted(self._implicit_tokens.iteritems(), key=lambda x: x[1])]
         return g
-
-    def _grammar_lex(self, g, rule):
-        g.lex_rules.append(rule)
-        g.extra_symbols.append(rule[0][0])
-        return g
-
-    def _lex_stmt(self, lhs, _eq, rhs):
-        return (lhs, rhs, None, None)
-    def _lex_stmt_with_action(self, lhs, _eq, rhs, action):
-        return (lhs, rhs, action.value, action.pos)
-
-    def _lex_lhs(self, lhs):
-        return (lhs, None)
-    def _lex_lhs_with_name(self, lhs, _lparen, lhs_name, _rparen):
-        return (lhs, lhs_name)
-
-    def _lex_rhs_snip(self, rhs):
-        return (LexRegex(rhs.value), None)
-    def _lex_rhs_snip_with_name(self, rhs, _lparen, rhs_name, _rparen):
-        return (LexRegex(rhs.value), rhs_name)
-
-    def _lex_rhs_lit(self, rhs):
-        return (LexLiteral(rhs), None)
-    def _lex_rhs_lit_with_name(self, rhs, _lparen, rhs_name, _rparen):
-        return (LexLiteral(rhs), rhs_name)
 
     def _stmt_type(self, lhs, _cc, type):
         return (lhs, type.value)
 
     def _stmt_type_void(self, lhs, _cc, type):
-        if type == 'discard':
-            return lhs, LexDiscard()
         if type == 'void':
             return (lhs, None)
-        raise RuntimeError("Expected 'void', 'discard' or a snippet.");
+        raise RuntimeError("Expected 'void' or a snippet.");
 
     def _stmt_rule(self, lhs, _cc, rhs_list, _dot, action):
         return _make_rule(lhs, None, rhs_list, action)
@@ -230,40 +193,42 @@ class LimeGrammar:
     def _rhs_list_start(self):
         return []
     def _rhs_list_append(self, lst, item):
-        lst.extend(item)
+        lst.append(item)
         return lst
 
     def _named_item(self, sym):
-        return [(sym, None)]
+        return (sym, None)
     def _named_item_with_name(self, sym, _lp, annot, _rp):
-        return [(sym, annot)]
+        return (sym, annot)
 
-    def _named_item_lit(self, snippet):
-        snippet = snippet.strip()
-        snippet = LexLiteral(snippet)
-        return self._lex_rhs(snippet)
+    def _named_item_lit(self, lit):
+        return self._lex_rhs(LexLiteral(lit))
+
+    def _named_item_lit_with_name(self, lit, _lp, annot, _rp):
+        return self._lex_rhs(LexLiteral(lit), annot)
 
     def _named_item_snippet(self, snippet):
-        snippet = snippet.value.strip()
-        snippet = LexRegex(snippet)
-        return self._lex_rhs(snippet)
+        return self._lex_rhs(LexRegex(snippet.value.strip()))
 
-    def _lex_rhs(self, rhs):
-        tok_name = self._implicit_tokens.get(rhs)
-        if not tok_name:
-            tok_name = '_implicit_%d' % len(self._implicit_tokens)
-            self._implicit_tokens[rhs] = tok_name
-        return [(tok_name, None)]
+    def _named_item_snippet_with_name(self, snippet, _lp, annot, _rp):
+        return self._lex_rhs(LexRegex(snippet.value.strip()), annot)
+
+    def _lex_rhs(self, rhs, annot=None):
+        tok_id = self._implicit_tokens.get(rhs)
+        if tok_id is None:
+            tok_id = len(self._implicit_tokens)
+            self._implicit_tokens[rhs] = tok_id
+        return (tok_id, annot)
 
     def _make_grammar(self, pg):
-        g = Grammar(*pg.rules, symbols=pg.extra_symbols)
+        g = Grammar(*pg.rules, root=pg.root, symbols=pg.extra_symbols)
         g.context_lexer = pg.context_lexer
-        g.lex_rules = pg.lex_rules
+        g.tokens = pg.tokens
         g.sym_annot = pg.sym_annot
-        g.token_comments = pg.token_comments
         g.user_include = pg.user_include
         g.token_type = pg.token_type
         g.tests = pg.tests
+        g.discards = pg.discards
         return g
 
     def _test_list_new(self):
@@ -285,27 +250,41 @@ class LimeGrammar:
         g.tests.append((sym, tl, False))
         return g
 
+    def _grammar_kw_discard_snip(self, g, _kw, snip):
+        g.discards.append(LexRegex(snip.value))
+        return g
+
+    def _grammar_kw_discard_ql(self, g, _kw, ql):
+        g.discards.append(LexLiteral(ql))
+        return g
+
+    def _grammar_kw_root(self, g, _kw, rule):
+        return self._grammar_rule(
+            self._grammar_kw_root_id(g, _kw, rule.left),
+            rule)
+
+    def _grammar_kw_root_id(self, g, _kw, rule):
+        if g.root is not None:
+            raise RuntimeError('Multiple root specifiers')
+        g.root = rule
+        return g
+
     grammar = Grammar(
         Rule('root', ('grammar',), action=_make_grammar),
         Rule('grammar', (), action=_grammar_empty),
         Rule('grammar', ('grammar', 'kw_include', 'SNIPPET'), action=_grammar_kw_user_include),
         Rule('grammar', ('grammar', 'kw_token_type', 'SNIPPET'), action=_grammar_kw_token_type),
         Rule('grammar', ('grammar', 'kw_context_lexer'), action=_grammar_kw_context_lexer),
+        Rule('grammar', ('grammar', 'kw_discard', 'SNIPPET'), action=_grammar_kw_discard_snip),
+        Rule('grammar', ('grammar', 'kw_discard', 'QL'), action=_grammar_kw_discard_ql),
         Rule('grammar', ('grammar', 'kw_test', 'ID', 'test_list', '.'), action=_grammar_kw_test_accept),
         Rule('grammar', ('grammar', 'kw_test', '~', 'ID', 'test_list', '.'), action=_grammar_kw_test_reject),
+        Rule('grammar', ('grammar', 'kw_root', 'rule_stmt'), action=_grammar_kw_root),
+        Rule('grammar', ('grammar', 'kw_root', 'ID', '.'), action=_grammar_kw_root_id),
         Rule('grammar', ('grammar', 'type_stmt'), action=_grammar_type),
         Rule('grammar', ('grammar', 'rule_stmt'), action=_grammar_rule),
-        Rule('grammar', ('grammar', 'lex_stmt'), action=_grammar_lex),
         Rule('rule_action', ()),
         Rule('rule_action', ('SNIPPET',)),
-        Rule('lex_stmt', ('lex_lhs', '~=', 'lex_rhs'), action=_lex_stmt),
-        Rule('lex_stmt', ('lex_lhs', '~=', 'lex_rhs', 'SNIPPET'), action=_lex_stmt_with_action),
-        Rule('lex_lhs', ('ID',), action=_lex_lhs),
-        Rule('lex_lhs', ('ID', '(', 'ID', ')'), action=_lex_lhs_with_name),
-        Rule('lex_rhs', ('SNIPPET',), action=_lex_rhs_snip),
-        Rule('lex_rhs', ('SNIPPET', '(', 'ID', ')'), action=_lex_rhs_snip_with_name),
-        Rule('lex_rhs', ('QL',), action=_lex_rhs_lit),
-        Rule('lex_rhs', ('QL', '(', 'ID', ')'), action=_lex_rhs_lit_with_name),
         Rule('type_stmt', ('ID', '::', 'SNIPPET'), action=_stmt_type),
         Rule('type_stmt', ('ID', '::', 'ID'), action=_stmt_type_void),
         Rule('rule_stmt', ('ID', '::=', 'rhs_list', '.', 'rule_action'), action=_stmt_rule),
@@ -315,7 +294,9 @@ class LimeGrammar:
         Rule('named_item', ('ID',), action=_named_item),
         Rule('named_item', ('ID', '(', 'ID', ')'), action=_named_item_with_name),
         Rule('named_item', ('QL',), action=_named_item_lit),
+        Rule('named_item', ('QL', '(', 'ID', ')'), action=_named_item_lit_with_name),
         Rule('named_item', ('SNIPPET',), action=_named_item_snippet),
+        Rule('named_item', ('SNIPPET', '(', 'ID', ')'), action=_named_item_snippet_with_name),
         Rule('test_list', (), action=_test_list_new),
         Rule('test_list', ('test_list', 'ID'), action=_test_list_id),
         Rule('test_list', ('test_list', 'SNIPPET'), action=_test_list_lit),
@@ -345,8 +326,6 @@ def _lex(p, lex, text):
     for tok, tok_id in lex.tokens(text):
         tok_id = g.lex_rules[tok_id][0][0]
         annot = g.sym_annot.get(tok_id)
-        if isinstance(annot, LexDiscard):
-            continue
         yield (tok_id, tok)
 
 def _lexparse(p, text, **kw):
@@ -359,47 +338,58 @@ def _lexparse(p, text, **kw):
             lex.set_dfa(state.lexer)
         return p.parse(_lex(p, lex, text), state_visitor=update_lex, **kw)
 
-def _build_multidfa(lex_rules, allowed_syms=None):
-    fas = []
-    rule_fa_list = []
-    priorities = {}
-    for i, lex_rule in enumerate(lex_rules):
-        (lhs, lhs_name), (rhs, rhs_name), action, pos = lex_rule
-        if allowed_syms is not None and lhs not in allowed_syms:
-            continue
-        if isinstance(rhs, LexRegex):
-            g2 = parse_regex(rhs.regex)
-            fa = make_enfa_from_regex(g2, i)
-            priorities[i] = 0
-        else:
-            fa = make_dfa_from_literal(rhs.literal, i)
-            priorities[i] = 1
-        fas.append(fa)
-        rule_fa_list.append((lhs, rhs, fa))
+class _LexDfaAccept:
+    def __init__(self, token_id, prio, tokens):
+        self.token_id = token_id
+        self.prio = prio
+        self.tokens = frozenset(tokens)
 
-    def _combine_accept_labels(lhs, rhs):
-        lhs_prio = priorities[lhs]
-        rhs_prio = priorities[rhs]
-        if lhs_prio == rhs_prio:
-            raise LexerConflictError(lex_rules[lhs][1][0], lex_rules[rhs][1][0])
-        return lhs if lhs_prio > rhs_prio else rhs
-
-    enfa = union_fa(fas)
-    return rule_fa_list, minimize_enfa(enfa, _combine_accept_labels)
+    def __str__(self):
+        return '%d [%s]' % (self.token_id, ', '.join((str(tok) for tok in self.tokens)))
 
 def make_lime_parser(g, **kw):
     p = make_lrparser(g, **kw)
-
     g = p.grammar
-    if g.context_lexer:
-        # Discard tokens are always enabled
-        discard_terms = set((term for term in g.terminals() if isinstance(g.sym_annot.get(term), LexDiscard)))
 
+    def process_token(token, token_id):
+        if isinstance(token, LexRegex):
+            accept = _LexDfaAccept(token_id, 0, [token])
+            g = parse_regex(token.regex)
+            dfa = make_enfa_from_regex(g, accept)
+        else:
+            assert isinstance(token, LexLiteral)
+            accept = _LexDfaAccept(token_id, 1, [token])
+            dfa = make_dfa_from_literal(token.literal, accept)
+        return dfa
+
+    fas = []
+    for token_id, token in enumerate(g.tokens):
+        dfa = process_token(token, token_id)
+        fas.append(dfa)
+    p.discard_id = len(fas)
+    for discard in g.discards:
+        dfa = process_token(discard, p.discard_id)
+        fas.append(dfa)
+
+    def combine_accept_labels(lhs, rhs):
+        if lhs.token_id == rhs.token_id:
+            return _LexDfaAccept(lhs.token_id, max(lhs.prio, rhs.prio), lhs.tokens | rhs.tokens)
+        if lhs.prio == rhs.prio:
+            raise LexerConflictError(lhs.token, rhs.token)
+        return lhs if lhs.prio > rhs.prio else rhs
+
+    if not g.context_lexer:
+        p.lex_dfas = fas
+        p.lexers = [minimize_enfa(union_fa(fas), combine_accept_labels)]
+        for state in p.states:
+            state.lexer_id = 0
+    else:
         # Walk the goto/action tables and determine the list of possible tokens for each state
         lex_map = {}
         term_lists = []
         for state in p.states:
-            terms = set((sym for sym in state.goto if sym in g.terminals())) | discard_terms
+            terms = set((sym for sym in state.goto if sym in g.terminals()))
+            terms.add(p.discard_id)
             for lookahead in state.action:
                 terms |= set(lookahead)
             terms = frozenset(terms)
@@ -410,11 +400,10 @@ def make_lime_parser(g, **kw):
             else:
                 state.lexer_id = lex_map[terms]
 
-        p.lexers = [_build_multidfa(g.lex_rules, set(term_list))[1] for term_list in term_lists]
-        for state in p.states:
-            state.lexer = p.lexers[state.lexer_id]
-    else:
-        p.lex_dfas, p.lexer = _build_multidfa(g.lex_rules)
+        p.lexers = []
+        for term_list in term_lists:
+            lex_dfas = [fa for token_id, fa in enumerate(fas) if token_id in term_list]
+            p.lexers.append(minimize_enfa(union_fa(lex_dfas), combine_accept_labels))
 
     p.lexparse = types.MethodType(_lexparse, p)
     return p
