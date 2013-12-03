@@ -43,9 +43,9 @@ def _main():
             if sym.startswith('kw_'):
                 return '"%%%s"' % sym[3:]
         print """\
-ID ~= {[a-zA-Z0-9_\\-]+}.
-QL ~= <a single- or double- quoted literal>.
-SNIPPET ~= <an arbitrary text enclosed in braces>.
+ID ::= {[a-zA-Z0-9_\\-]+}.
+QL ::= <a single- or double- quoted literal>.
+SNIPPET ::= <an arbitrary text enclosed in braces>.
 """
         print_grammar_as_lime(LimeGrammar.grammar, translate=_convert)
 
@@ -63,16 +63,29 @@ SNIPPET ~= <an arbitrary text enclosed in braces>.
             #        print test
 
             if options.print_dfas:
-                for lhs, rhs, fa in p.lex_dfas:
-                    print lhs, rhs
+                for token_id, fa in enumerate(p.lex_dfas):
+                    print token_id, (p.grammar.tokens[token_id] if token_id < len(p.grammar.tokens) else '%discard')
                     minimize_enfa(fa).print_graph()
                     print ''
-                p.lexer.print_graph()
+                for i, lexer in enumerate(p.lexers):
+                    print 'lexer', i
+                    lexer.print_graph()
+                    print ''
 
             if options.print_states:
+                def sym_trans(sym):
+                    return str(p.grammar.tokens[sym]) if isinstance(sym, int) else str(sym)
+
+                def lookahead_trans(la):
+                    return '(' + ', '.join(sym_trans(sym) for sym in la) + ')'
+
                 for i, state in enumerate(p.states):
                     print "0x%x(%d):" % (i, i)
-                    print state
+                    print state.print_state(sym_trans)
+                    for sym, next_state_id in sorted(state.goto.iteritems()):
+                        print 'goto %d(0x%x) over %s' % (next_state_id, next_state_id, sym_trans(sym))
+                    for la, action in sorted(state.action.iteritems()):
+                        print 'action at %s: %s' % (lookahead_trans(la), repr(action))
 
             if options.parse:
                 print p.lexparse(options.parse, shift_visitor=print_shift, postreduce_visitor=print_reduce)

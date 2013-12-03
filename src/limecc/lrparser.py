@@ -290,11 +290,11 @@ class _LrParser(object):
             
             for symbol in aug_grammar.symbols():
                 newstate = _goto(state, symbol)
-                if newstate == None:
+                if newstate is None:
                     continue
                     
                 oldstate_index = state_map.get(newstate)
-                if oldstate_index != None:
+                if oldstate_index is not None:
                     state.goto[symbol] = oldstate_index
                 else:
                     state.goto[symbol] = len(states)
@@ -319,7 +319,7 @@ class _LrParser(object):
         for state_id, state in enumerate(states):
             for item_index, item in enumerate(state.itemlist):
                 nt = item.next_token()
-                if nt == None:
+                if nt is None:
                     if item.rule.left == '':
                         accepting_state = state_id
                         add_action(state, item.lookahead, None, item_index)
@@ -472,10 +472,10 @@ class State:
     def __repr__(self):
         return repr(self.itemlist)
     
-    def __str__(self):
+    def print_state(self, symbol_repr=repr):
         res = []
         for item in self.itemlist:
-            res.append(str(item))
+            res.append(item.print_item(symbol_repr))
         return '\n'.join(res)
 
     def get_action(self, lookahead, counters):
@@ -538,8 +538,8 @@ class _Item:
     def __hash__(self):
         return hash((self.rule, self.index, self.lookahead))
         
-    def __str__(self):
-        right_syms = [repr(symbol) for symbol in self.rule.right]
+    def print_item(self, symbol_repr=repr):
+        right_syms = [symbol_repr(symbol) for symbol in self.rule.right]
         if self.index == 0:
             if not right_syms:
                 right_syms = ['. ']
@@ -551,7 +551,7 @@ class _Item:
             right_syms[self.index - 1] = right_syms[self.index - 1] + ' . ' + right_syms[self.index]
             del right_syms[self.index]
 
-        lookahead = ''.join((' (', ', '.join(self.lookahead), ')')) if self.lookahead else ''
+        lookahead = ''.join((' (', ', '.join((symbol_repr(token) for token in self.lookahead)), ')')) if self.lookahead else ''
         return ''.join((repr(self.rule.left), ' = ', ', '.join(right_syms), ';', lookahead))
         
     def is_kernel(self):
