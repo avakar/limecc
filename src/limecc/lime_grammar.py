@@ -19,7 +19,6 @@ from grammar import Rule, Grammar
 from lrparser import make_lrparser
 from simple_lexer import simple_lexer, Token
 import types, sys
-from lime_lexer import LimeLexer
 from fa import union_fa, minimize_enfa
 from regex_parser import parse_regex, make_enfa_from_regex, make_dfa_from_literal
 
@@ -328,12 +327,42 @@ def _lex(p, lex, text):
         annot = g.sym_annot.get(tok_id)
         yield (tok_id, tok)
 
+class _LimeLexer:
+    def __init__(self, dfa):
+        self.set_dfa(dfa)
+
+    def tokens(self, s):
+        state = iter(self.dfa.initial).next()
+
+        tok_start = 0
+        for i, ch in enumerate(s):
+            for e in state.outedges:
+                if ch in e.label:
+                    state = e.target
+                    break
+            else:
+                yield s[tok_start:i], self.dfa.accept_labels.get(state)
+                tok_start = i
+                state = iter(self.dfa.initial).next()
+                for e in state.outedges:
+                    if ch in e.label:
+                        state = e.target
+                        break
+                else:
+                    raise RuntimeError('Invalid character encountered at position %d: %c' % (i, ch))
+
+        yield s[tok_start:], self.dfa.accept_labels.get(state)
+
+    def set_dfa(self, dfa):
+        assert len(dfa.initial) == 1
+        self.dfa = dfa
+
 def _lexparse(p, text, **kw):
     if not p.grammar.context_lexer:
-        lex = LimeLexer(p.lexer)
+        lex = _LimeLexer(p.lexer)
         return p.parse(_lex(p, lex, text), **kw)
     else:
-        lex = LimeLexer(p.states[0].lexer)
+        lex = _LimeLexer(p.states[0].lexer)
         def update_lex(state):
             lex.set_dfa(state.lexer)
         return p.parse(_lex(p, lex, text), state_visitor=update_lex, **kw)

@@ -1,16 +1,6 @@
 from lime_grammar import LexRegex
 from jinja2 import Template
 
-
-
-#_generator = {
-#    "reduce_fn_def": """
-#inline int {$class_name}::r{$i}(self_type & self)
-#{
-#    // {$rule}
-#}
-#""",
-
 hpp_templ = Template(r"""
 #ifndef PARSER_HPP
 #define PARSER_HPP

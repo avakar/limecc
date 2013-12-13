@@ -4,7 +4,7 @@
 from setuptools import setup
 setup(name='limecc',
     version='0.2',
-    description='Lexer and parser generator with lemon-like description language',
+    description='Lexer and parser generator with a lemon-like description language',
     author='Martin Vejnár',
     author_email='avakar@ratatanek.cz',
     url='http://github.com/avakar/limecc',

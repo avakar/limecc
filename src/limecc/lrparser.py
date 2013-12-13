@@ -39,7 +39,9 @@ Modify the semantic actions to get the required results.
     >>> p2.parse(['item', 'item'])
     2
 
-    >>> def append_list(ctx, l, i): l.append(i); return l
+    >>> def append_list(ctx, l, i):
+    ...     l.append(i)
+    ...     return l
     >>> g3 = Grammar(
     ...     Rule('list', (), lambda ctx: []),
     ...     Rule('list', ('list', 'item'), append_list)
@@ -154,7 +156,6 @@ See the documentation for the `State` class for more information.
 
 from grammar import Grammar, Rule
 from first import First
-from matchers import default_matchers
 import sys
 
 def _extract_symbol(token):
@@ -233,10 +234,8 @@ class _LrParser(object):
     >>> p = _LrParser(lr0_grammar, k=0)
     
     The method 'parse' will accept an iterable of tokens, which are arbitrary objects.
-    A token T is matched to a terminal symbol S in the following manner. First,
-    the terminal S is looked up in the 'matchers' dict, passed during parser's construction.
-    If found, the match is successful if 'matchers[S](extract_symbol(T))' is true.
-    Otherwise, matching is done with the equality operator, i.e. 'S == extract_symbol(T)'.
+    A token T is matched to a terminal symbol S in the following manner.
+    Matching is done with the equality operator, i.e. 'S == extract_symbol(T)'.
     
     Whenever the parser reduces a word to a non-terminal, the associated semantic action is executed.
     This way Abstract Syntax Trees or other objects can be constructed. The parse method
@@ -339,21 +338,6 @@ class _LrParser(object):
             for state in states:
                 del state.itemset
                 
-    def imbue_matchers(self, matchers=default_matchers):
-        if matchers == None:
-            matchers = dict()
-        
-        for state in self.states:
-            state.action_match = []
-            for lookahead, action in state.action.iteritems():
-                new_lookahead = tuple((matchers[symbol] if symbol in matchers else _SymbolMatcher(symbol)) for symbol in lookahead)
-                state.action_match.append((new_lookahead, action))
-            
-            state.goto_match = []
-            for symbol, next_state in state.goto.iteritems():
-                if symbol in matchers:
-                    state.goto_match.append((matchers[symbol], next_state))
-
     def parse(self, sentence, context=None, extract_symbol=_extract_symbol,
             extract_value=_extract_value, prereduce_visitor=None, postreduce_visitor=None,
             shift_visitor=None, state_visitor=None):
@@ -458,9 +442,6 @@ class State:
         self.action = {}
         self.action_origin = {}
 
-        self.action_match = []
-        self.goto_match = []
-
     def __eq__(self, other):
         if not isinstance(other, State):
             return False
@@ -481,24 +462,12 @@ class State:
     def get_action(self, lookahead, counters):
         if lookahead in self.action:
             return self.action[lookahead]
-    
-        for match_list, action in self.action_match:
-            if len(match_list) != len(lookahead):
-                continue
-
-            if all(match(symbol) for match, symbol in zip(match_list, lookahead)):
-                return action
-        
         raise ParsingError('Unexpected input token: %s' % repr(lookahead), counters)
 
     def get_next_state(self, symbol, counters):
         if symbol in self.goto:
             return self.goto[symbol]
             
-        for match, next_state in self.goto_match:
-            if match(symbol):
-                return next_state
-        
         raise ParsingError('Unexpected input token: %s' % repr(symbol), counters)
         
     def _close(self, itemset, grammar, first):
