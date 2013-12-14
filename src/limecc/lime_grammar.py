@@ -17,7 +17,6 @@ the corresponding Rule object.
 
 from grammar import Rule, Grammar
 from lrparser import make_lrparser
-from simple_lexer import simple_lexer, Token
 import types, sys
 from fa import union_fa, minimize_enfa
 from regex_parser import parse_regex, make_enfa_from_regex, make_dfa_from_literal
@@ -65,54 +64,6 @@ class LexLiteral:
 
     def __str__(self):
         return '"' + self.literal + '"'
-
-class _LimeLexerClassify:
-    def __init__(self):
-        self.quote = None
-        self.comment = False
-        self.snippet = 0
-        self.escape = False
-
-    def __call__(self, ch):
-        if self.snippet != 0:
-            if ch == '}':
-                self.snippet -= 1
-            elif ch == '{':
-                self.snippet += 1
-            return 'SNIPPET'
-
-        if self.comment:
-            if ch == '\n':
-                self.comment = False
-            return False
-
-        if ch == self.quote:
-            self.quote = None
-            return
-        if self.quote:
-            return 'QL'
-        if ch in '\'"':
-            self.quote = ch
-            return
-
-        if ch == '{':
-            self.snippet = 1
-            return
-
-        if ch == '#':
-            self.comment = True
-            return
-
-        if ch.isspace():
-            return
-
-        if ch.isalnum() or ch in '_-%':
-            return 'ID'
-
-        if ch in '~:=.':
-            return 'op'
-
-        return ''
 
 def _make_rule(lhs, lhs_name, rhs_list, rule_action):
     r = Rule(lhs, tuple((rhs for rhs, rhs_name in rhs_list)))
@@ -241,12 +192,8 @@ class LimeGrammar:
         tl.append(LexLiteral(lit))
         return tl
 
-    def _grammar_kw_test_accept(self, g, _kw, sym, tl, _dot):
-        g.tests.append((sym, tl, True))
-        return g
-
-    def _grammar_kw_test_reject(self, g, _kw, _not, sym, tl, _dot):
-        g.tests.append((sym, tl, False))
+    def _grammar_kw_test(self, g, _kw, pattern, _sym, text, _dot):
+        g.tests.append((pattern, text))
         return g
 
     def _grammar_kw_discard_snip(self, g, _kw, snip):
@@ -276,8 +223,7 @@ class LimeGrammar:
         Rule('grammar', ('grammar', 'kw_context_lexer'), action=_grammar_kw_context_lexer),
         Rule('grammar', ('grammar', 'kw_discard', 'SNIPPET'), action=_grammar_kw_discard_snip),
         Rule('grammar', ('grammar', 'kw_discard', 'QL'), action=_grammar_kw_discard_ql),
-        Rule('grammar', ('grammar', 'kw_test', 'ID', 'test_list', '.'), action=_grammar_kw_test_accept),
-        Rule('grammar', ('grammar', 'kw_test', '~', 'ID', 'test_list', '.'), action=_grammar_kw_test_reject),
+        Rule('grammar', ('grammar', 'kw_test', 'test_list', '::=', 'test_list', '.'), action=_grammar_kw_test),
         Rule('grammar', ('grammar', 'kw_root', 'rule_stmt'), action=_grammar_kw_root),
         Rule('grammar', ('grammar', 'kw_root', 'ID', '.'), action=_grammar_kw_root_id),
         Rule('grammar', ('grammar', 'type_stmt'), action=_grammar_type),
@@ -302,23 +248,130 @@ class LimeGrammar:
         Rule('test_list', ('test_list', 'QL'), action=_test_list_lit),
         )
 
-def _lime_lexer(input, filename=None):
-    for tok in simple_lexer(input, _LimeLexerClassify(), filename=filename):
-        if tok.symbol == 'op':
-            yield Token(tok.value, tok.value, tok.pos)
-        elif tok.symbol == 'ID' and tok.value[:1] == '%':
-            yield Token('kw_' + tok.value[1:], tok.value, tok.pos)
-        elif tok.symbol == 'SNIPPET':
-            yield Token('SNIPPET', tok.value[:-1], tok.pos)
+class TokenPos:
+    def __init__(self, filename, line, col):
+        self.filename = filename
+        self.line = line
+        self.col = col
+
+    def __str__(self):
+        return "%s(%d)" % (self.filename, self.line)
+
+    def __repr__(self):
+        return "TokenPos(%r, %r, %r)" % (self.filename, self.line, self.col)
+
+    def __add__(self, rhs):
+        res = TokenPos(self.filename, self.line, self.col)
+        pos = rhs.find('\n')
+        while pos != -1:
+            res.line += 1
+            res.col = 1
+            rhs = rhs[pos+1:]
+            pos = rhs.find('\n')
+        res.col += len(rhs)
+        return res
+
+class Token:
+    def __init__(self, kind, text, pos=None):
+        self.symbol = kind
+        self.value = text
+        self.pos = pos
+
+    def __repr__(self):
+        if self.pos is not None:
+            return 'Token(%r, %r, %r)' % (self.symbol, self.value, self.pos)
         else:
-            yield tok
+            return 'Token(%r, %r)' % (self.symbol, self.value)
+
+class InvalidTokenError(Exception):
+    def __init__(self, message, token_pos):
+        self.message = message
+        self.token_pos = token_pos
+
+    def __str__(self):
+        return '%s(%d,%d): error: %s' % (self.token_pos.filename, self.token_pos.line, self.token_pos.col, self.message)
+
+def _lime_lex_one(input, pos):
+    ch = input[0]
+    if ch.isspace():
+        i = 1
+        while i < len(input) and input[i].isspace():
+            i += 1
+        return None, i
+    elif ch.isalpha() or ch in '_%':
+        i = 1
+        while i < len(input):
+            ch = input[i]
+            if not ch.isalnum() and ch != '_':
+                break
+            i += 1
+        if input[0] != '%':
+            return ('ID', 0, i), i
+        else:
+            return ('kw_' + input[1:i], 0, i), i
+    elif ch == '{':
+        i = 1
+        while i < len(input) and input[i] == '{':
+            i += 1
+        depth = i
+        close_brace = '}'*depth
+        nest = 0
+        while i < len(input):
+            if input[i] == '{':
+                nest += 1
+            elif input[i] == '}':
+                if nest <= 0 and input[i:].startswith(close_brace):
+                    return ('SNIPPET', depth, i), i+depth
+                nest -= 1
+            i += 1
+        raise InvalidTokenError('unclosed snippet', pos)
+    elif ch in ('"', "'"):
+        i = 1
+        esc = False
+        while i < len(input) and (esc or input[i] != input[0]):
+            if esc:
+                esc = False
+            elif input[i] == '\\':
+                esc = True
+            elif input[i] == '\n':
+                raise InvalidTokenError('end of line before closing quote', pos+input[:i])
+            i += 1
+        if i == len(input):
+            raise InvalidTokenError('end of file before closing quote', pos)
+        return ('QL', 1, i), i+1
+    elif ch == '#':
+        i = 1
+        while i < len(input) and input[i] != '\n':
+            i += 1
+        return None, i+1
+    elif ch in '()':
+        return (input[0], 0, 1), 1
+    else:
+        i = 0
+        while i < len(input) and input[i] in ':=.':
+            i += 1
+        if i == 0:
+            raise InvalidTokenError('unexpected character', pos)
+        return (input[:i], 0, i), i
+
+def _lime_lex(input, filename=None):
+    input = str(input)
+    tokpos = TokenPos(filename, 1, 1)
+    while input:
+        tokdef, next_input = _lime_lex_one(input, tokpos)
+        if tokdef is not None:
+            kind, start, stop = tokdef
+            yield Token(kind, input[start:stop], tokpos + input[:start])
+        tokpos = tokpos + input[:next_input]
+        input = input[next_input:]
 
 def _extract(tok):
     return tok.value if tok.symbol != 'SNIPPET' else tok
 
 def parse_lime_grammar(input, filename=None):
     p = LimeGrammar()
-    return p.parse(_lime_lexer(input, filename=filename), extract_value=_extract)
+    toks = _lime_lex(input, filename=filename)
+    return p.parse(toks, extract_value=_extract)
 
 def _lex(p, lex, text):
     g = p.grammar

@@ -5,7 +5,7 @@ This is the main script that accepts the grammar file and generates
 the C++ header file containing the parser and potentially the lexer.
 """
 
-from lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError
+from lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError, InvalidTokenError
 from lrparser import InvalidGrammarError, ActionConflictError
 from fa import minimize_enfa
 import sys, os.path
@@ -58,9 +58,9 @@ SNIPPET ::= <an arbitrary text enclosed in braces>.
             g = parse_lime_grammar(input, filename=fname)
             p = make_lime_parser(g, keep_states=options.print_states)
 
-            #if not options.no_tests:
-            #    for test in g.tests:
-            #        print test
+            if not options.no_tests:
+                for test in g.tests:
+                    print test
 
             if options.print_dfas:
                 for token_id, fa in enumerate(p.lex_dfas):
@@ -95,6 +95,9 @@ SNIPPET ::= <an arbitrary text enclosed in braces>.
                 with open(output, 'w') as fout:
                     fout.write(lime_cpp(p))
 
+        except InvalidTokenError, e:
+            print str(e)
+            return 1
         except LexerConflictError, e:
             print e.message
             return 1
