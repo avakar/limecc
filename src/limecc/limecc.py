@@ -5,8 +5,8 @@ This is the main script that accepts the grammar file and generates
 the C++ header file containing the parser and potentially the lexer.
 """
 
-from lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError, InvalidTokenError
-from lrparser import InvalidGrammarError, ActionConflictError
+from lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError, LexLiteral, _LimeLexer
+from lrparser import ParsingError, InvalidGrammarError, ActionConflictError, make_lrparser, _extract_symbol
 from fa import minimize_enfa
 import sys, os.path
 
@@ -59,8 +59,21 @@ SNIPPET ::= <an arbitrary text enclosed in braces>.
             p = make_lime_parser(g, keep_states=options.print_states)
 
             if not options.no_tests:
-                for test in g.tests:
-                    print test
+                def partial_lex(sentential_form):
+                    for sym in sentential_form:
+                        if isinstance(sym, LexLiteral):
+                            for tok in _LimeLexer(p.lexers[0]).tokens(sym.literal, sym.pos):
+                                if _extract_symbol(tok) != p.discard_id:
+                                    yield tok
+                        else:
+                            yield sym
+
+                for pattern, text, pos in g.tests:
+                    test_parser = make_lrparser(g, root=pattern, sentential_forms=True)
+                    try:
+                        test_parser.parse(partial_lex(text))
+                    except ParsingError, e:
+                        print ParsingError('test failed: %s' % e.message, pos).format()
 
             if options.print_dfas:
                 for token_id, fa in enumerate(p.lex_dfas):
@@ -95,7 +108,7 @@ SNIPPET ::= <an arbitrary text enclosed in braces>.
                 with open(output, 'w') as fout:
                     fout.write(lime_cpp(p))
 
-        except InvalidTokenError, e:
+        except ParsingError, e:
             print str(e)
             return 1
         except LexerConflictError, e:

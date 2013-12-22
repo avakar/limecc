@@ -1,10 +1,21 @@
 def _unbox_onetuples(ctx, *args):
-    """This is the default action associated with Rule objects.
-    
-    >>> _unbox_onetuples(None, 'data')
-    'data'
+    """Returns the input tuple, unboxed if it has length 1.
+
+    The first argument is ignored and does not count into the
+    input tuple.
+
+    Apply this function to an AST to make it more human readable.
+    In essence, rules of the form `A -> B` will cease to contribute
+    to the tree. The unboxing is not performed recursively.
+
+    This is the default action associated with Rule objects.
+
     >>> _unbox_onetuples(None)
     ()
+    >>> _unbox_onetuples(None, 'data')
+    'data'
+    >>> _unbox_onetuples(None, ('data',))
+    ('data',)
     >>> _unbox_onetuples(None, 'data1', 'data2')
     ('data1', 'data2')
     """
@@ -42,7 +53,7 @@ class Rule:
     at the grammar level. The symbols standing on the left side of some rule
     are considered non-terminal.
     
-    A rule may have no symbols on the right, such rules produce empty strings.
+    A rule can have no symbols on the right, such rules produce empty strings.
     
     >>> print Rule('e', ())
     'e' = ;

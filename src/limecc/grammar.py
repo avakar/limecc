@@ -6,23 +6,12 @@ class Grammar:
     Each rule is encapsulated by an instance of the 'Rule' class.
     The rules are supplied during construction.
     
-    The grammar also tracks the root non-terminal, which is either
-    set explicitly during construction, or assumed to be the left
-    hand side symbol of the first rule. For an empty grammar,
-    there is no root and Grammar.root() will return None.
-    
-    >>> g = Grammar()
-    >>> print g.root()
-    None
-
     >>> g = Grammar(
     ...     Rule('list'),
     ...     Rule('list', ('list', 'item')))
     >>> print g
     'list' = ;
     'list' = 'list', 'item';
-    >>> g.root()
-    'list'
     
     Grammars expose their rules using the standard list interface.
     
@@ -60,7 +49,7 @@ class Grammar:
     'root' = 'list';
     """
     def __init__(self, *rules, **kw):
-        if any((opt not in ('root', 'symbols') for opt in kw)) or any((not isinstance(rule, Rule) for rule in rules)):
+        if any((opt != 'symbols' for opt in kw)) or any((not isinstance(rule, Rule) for rule in rules)):
             raise AttributeError('Unknown argument')
 
         self._rules = rules
@@ -75,7 +64,6 @@ class Grammar:
             symbols.extend(kw['symbols'])
 
         self._symbols = frozenset(symbols)
-        self._root = kw.get('root', self._rules[0].left if self._rules else None)
 
         self._rule_cache = {}
         for left in self._nonterms:
@@ -142,18 +130,6 @@ class Grammar:
         """Returns an iterable representing the current set of all terminal symbols."""
         return self._symbols - self._nonterms
 
-    def root(self):
-        """Returns the root non-terminal.
-        
-        >>> g = Grammar()
-        >>> print g.root()
-        None
-        >>> g = Grammar(Rule('a', ('b',)))
-        >>> print g.root()
-        a
-        """
-        return self._root
-        
 if __name__ == "__main__":
     import doctest
     doctest.testmod()

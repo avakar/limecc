@@ -1,5 +1,5 @@
 """
-This module provides the make_lrparser function, which creates
+This module provides the `make_lrparser` function, which creates
 a parser from a grammar in LR(k) form and return an object providing
 a single function, `parse`. Most often, `k` is set to 1.
 
@@ -97,18 +97,18 @@ method.
 Errors during parser construction
 ---------------------------------
 Errors during parser construction and parsing itself are signaled with
-exceptions. The `make_lrparser` function with raise `ActionConflictError`
+exceptions. The `make_lrparser` function will raise `ActionConflictError`
 if the grammar turns out not to be LR(k).
 
-    >>> g = Grammar(
+    >>> g4 = Grammar(
     ...     Rule('root', ('header', 'list',)),
     ...     Rule('list', ()),
     ...     Rule('list', ('item',)),
     ...     Rule('list', ('list', 'item')),
     ...     )
-    >>> make_lrparser(g, k=0) # doctest: +ELLIPSIS
+    >>> make_lrparser(g4, k=0)
     Traceback (most recent call last):
-       ...
+        ...
     ActionConflictError: shift/reduce conflict during LR(0) parser construction
 
 The `ActionConflictError` contains details about the LR conflict,
@@ -124,7 +124,7 @@ print a sequence of states, which form a counterexample and
 also highlight the conflicting items.
 
     >>> try:
-    ...     make_lrparser(g, k=0)
+    ...     make_lrparser(g4, k=0)
     ... except ActionConflictError, e:
     ...     err = e
     >>> print err.format_trace()
@@ -139,6 +139,25 @@ also highlight the conflicting items.
 In the above example, the last state has two items highlighted;
 a shift/reduce conflict can be seen. By following the list of states,
 a counterexample can be constructed: ['header', 'item'],
+
+Sentential forms
+----------------
+
+The LR parser may be requested to accept sentential forms (i.e. sequences
+of terminal and non-terminal symbols) as well as terminal words. Set
+`sentential_forms` parameter to true when calling `make_lrparser` function.
+
+    >>> sp1 = make_lrparser(g1, sentential_forms=True)
+    >>> sp1.parse(['list', 'item'])
+    ('list', 'item')
+    >>> sp1.parse(['list', 'list'])
+    Traceback (most recent call last):
+        ...
+    ParsingError: Unexpected input token: ('list',), position 1
+
+Keep in mind that supporting sentential forms will make the resulting parser
+larger and slower. On the other hand, such a parser will be useful when
+performing tests on a grammar.
 
 LR tables and states
 --------------------
@@ -164,6 +183,9 @@ def _extract_symbol(token):
 def _extract_value(token):
     return token[1] if isinstance(token, tuple) else getattr(token, 'value', token)
 
+def _extract_location(token, token_index=None):
+    return token[2] if isinstance(token, tuple) else getattr(token, 'pos', token_index)
+
 class InvalidGrammarError(Exception):
     """Raised during a construction of a parser, if the grammar is not LR(k)."""
 
@@ -181,7 +203,7 @@ class ActionConflictError(Exception):
         state = self.conflicting_state
 
         res = []
-        res.append('\n'.join([('>' if i in (self.item1, self.item2) else ' ') + str(item) for i, item in enumerate(state.itemlist)]))
+        res.append('\n'.join([('>' if i in (self.item1, self.item2) else ' ') + item.format_item() for i, item in enumerate(state.itemlist)]))
 
         while True:
             parent_symbol = state.parent_symbol
@@ -189,7 +211,7 @@ class ActionConflictError(Exception):
             state = self.states[next_id] if next_id != None else None
             if state is None:
                 break
-            res.append('\n'.join([('>' if item.next_token() == parent_symbol else ' ') + str(item) for i, item in enumerate(state.itemlist)]))
+            res.append('\n'.join([('>' if item.next_token() == parent_symbol else ' ') + item.format_item() for i, item in enumerate(state.itemlist)]))
 
         return '\n\n'.join(reversed(res))
 
@@ -207,13 +229,24 @@ class ActionConflictError(Exception):
             trace = [self.g.token_comments.get(sym, sym) for sym in trace]
         return tuple(reversed(trace))
 
-class ParsingError(Exception):
+class ParsingError(RuntimeError):
     """Raised by a parser if the input word is not a sentence of the grammar."""
-    def __init__(self, message, position):
-        self.position = position
-        Exception.__init__(self, message)
+    def __init__(self, message, pos=None):
+        RuntimeError.__init__(self, message)
+        self.pos = pos
+    def format(self, severity='error'):
+        return '%s: %s: %s' % (self.pos, severity, self.message)
     def __str__(self):
-        return '%s, position %d' % (self.args[0], self.position)
+        return self.format()
+
+class UnexpectedTokenError(ParsingError):
+    def __init__(self, token, pos=None):
+        pos = _extract_location(token, pos)
+        ParsingError.__init__(self, 'unexpected token: %r' % _extract_symbol(token), pos)
+        self.token = token
+
+class PrematureEndOfFileError(ParsingError):
+    """Raised when an end of file is reached prematurely."""
 
 class _LrParser(object):
     """Represents a LR(k) parser.
@@ -259,18 +292,25 @@ class _LrParser(object):
     ParsingError: Unexpected input token: 's', position 1
     """
     
-    def __init__(self, grammar, k=1, keep_states=False):
-        if grammar.root() == None:
-            raise InvalidGrammarError('The grammar needs a root non-terminal.')
+    def __init__(self, grammar, k=1, keep_states=False, root=None, sentential_forms=False):
+        if len(grammar) == 0:
+            raise InvalidGrammarError('The grammar needs at least one rule.')
+
+        if root is None:
+            root = [grammar[0].left]
+        else:
+            if any((sym not in grammar.symbols() for sym in root)):
+                raise InvalidGrammarError('The root sentential form is invalid')
 
         self.grammar = grammar
         self.k = k
+        self.root = tuple(root)
         
         # Augment the grammar with a special rule: 'S -> R',
         # where S is a new non-terminal (in this case '').
-        aug_grammar = Grammar(Rule('', (grammar.root(),)), *grammar)
+        aug_grammar = Grammar(Rule('', self.root), *grammar)
         
-        first = First(aug_grammar, k)
+        first = First(aug_grammar, k, nonterms=sentential_forms)
         
         def _goto(state, symbol):
             """Given a state and a symbol, constructs and returns the next state."""
@@ -324,10 +364,12 @@ class _LrParser(object):
                         add_action(state, item.lookahead, None, item_index)
                     else:
                         add_action(state, item.lookahead, item.rule, item_index)
-                elif aug_grammar.is_terminal(nt):
-                    for la in item.lookaheads(first):
-                        add_action(state, la, None, item_index)
-        
+                elif sentential_forms or aug_grammar.is_terminal(nt):
+                    word = item.rule.right[item.index:] + item.lookahead
+                    for w in first(word[1:]):
+                        w = (word[:1] + w)[:k]
+                        add_action(state, w, None, item_index)
+
         assert accepting_state != None
         
         self.accepting_state = accepting_state
@@ -387,7 +429,12 @@ class _LrParser(object):
 
             update_lookahead()
             key = tuple(extract_symbol(token) for token in lookahead)
-            action = state.get_action(key, token_counter)
+            if key in state.action:
+                action = state.action[key]
+            else:
+                assert lookahead
+                raise UnexpectedTokenError(lookahead[0], token_counter)
+
             if action:   # reduce
                 if len(action.right) > 0:
                     if prereduce_visitor:
@@ -404,7 +451,9 @@ class _LrParser(object):
                     if postreduce_visitor:
                         new_ast = postreduce_visitor(action, new_ast)
                 
-                stack.append(self.states[stack[-1]].get_next_state(action.left, token_counter))
+                next_state = self.states[stack[-1]].get_next_state(action.left, token_counter)
+                assert next_state is not None
+                stack.append(next_state)
                 asts.append(new_ast)
             else:   # shift
                 tok = get_shift_token()
@@ -415,11 +464,16 @@ class _LrParser(object):
                         assert len(asts) == 1
                         return asts[0]
                     else:
-                        raise ParsingError('Reached the end of file prematurely.', token_counter)
+                        raise PrematureEndOfFileError()
                 token_counter += 1
                 
                 key = extract_symbol(tok)
-                stack.append(state.get_next_state(key, token_counter))
+
+                next_state = state.get_next_state(key, token_counter)
+                if next_state is None:
+                    raise UnexpectedTokenError(tok, token_counter)
+
+                stack.append(next_state)
                 asts.append(extract_value(tok))
 
 class State:
@@ -456,19 +510,11 @@ class State:
     def print_state(self, symbol_repr=repr):
         res = []
         for item in self.itemlist:
-            res.append(item.print_item(symbol_repr))
+            res.append(item.format_item(symbol_repr))
         return '\n'.join(res)
 
-    def get_action(self, lookahead, counters):
-        if lookahead in self.action:
-            return self.action[lookahead]
-        raise ParsingError('Unexpected input token: %s' % repr(lookahead), counters)
-
     def get_next_state(self, symbol, counters):
-        if symbol in self.goto:
-            return self.goto[symbol]
-            
-        raise ParsingError('Unexpected input token: %s' % repr(symbol), counters)
+        return self.goto.get(symbol)
         
     def _close(self, itemset, grammar, first):
         """Given a list of items, returns the corresponding closed State object."""
@@ -507,7 +553,7 @@ class _Item:
     def __hash__(self):
         return hash((self.rule, self.index, self.lookahead))
         
-    def print_item(self, symbol_repr=repr):
+    def format_item(self, symbol_repr=repr):
         right_syms = [symbol_repr(symbol) for symbol in self.rule.right]
         if self.index == 0:
             if not right_syms:
@@ -549,8 +595,8 @@ class _SymbolMatcher:
     def __repr__(self):
         return '_SymbolMatcher(%s)' % self.symbol
 
-def make_lrparser(g, k=1, keep_states=False):
-    return _LrParser(g, k, keep_states)
+def make_lrparser(g, k=1, keep_states=False, root=None, sentential_forms=False):
+    return _LrParser(g, k=k, keep_states=keep_states, root=root, sentential_forms=sentential_forms)
 
 if __name__ == "__main__":
     import doctest

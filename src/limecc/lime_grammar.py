@@ -16,10 +16,16 @@ the corresponding Rule object.
 """
 
 from grammar import Rule, Grammar
-from lrparser import make_lrparser
+from lrparser import make_lrparser, ParsingError
 import types, sys
 from fa import union_fa, minimize_enfa
 from regex_parser import parse_regex, make_enfa_from_regex, make_dfa_from_literal
+
+class LimeSpecParsingError(ParsingError):
+    """Raised if there is a semantic error in the lime specification."""
+
+class LimeLexingError(ParsingError):
+    """Raised if an unexpected token is encountered when lexing with lime spec."""
 
 class LexerConflictError(Exception):
     def __init__(self, rule1, rule2):
@@ -28,8 +34,9 @@ class LexerConflictError(Exception):
         self.rule2 = rule2
 
 class LexRegex:
-    def __init__(self, regex):
+    def __init__(self, regex, pos=None):
         self.regex = regex
+        self.pos = None
 
     def __eq__(self, other):
         return isinstance(other, LexRegex) and self.regex == other.regex
@@ -47,8 +54,9 @@ class LexRegex:
         return 'LexRegex(%r)' % self.regex
 
 class LexLiteral:
-    def __init__(self, literal):
+    def __init__(self, literal, pos=None):
         self.literal = literal
+        self.pos = pos
 
     def __eq__(self, other):
         return isinstance(other, LexLiteral) and self.literal == other.literal
@@ -128,17 +136,17 @@ class LimeGrammar:
         return g
 
     def _stmt_type(self, lhs, _cc, type):
-        return (lhs, type.value)
+        return (lhs.value, type.value)
 
     def _stmt_type_void(self, lhs, _cc, type):
-        if type == 'void':
-            return (lhs, None)
-        raise RuntimeError("Expected 'void' or a snippet.");
+        if type.value != 'void':
+            raise LimeSpecParsingError('expected \'void\' or a snippet, got %r' % type.value, type.pos)
+        return (lhs.value, None)
 
     def _stmt_rule(self, lhs, _cc, rhs_list, _dot, action):
-        return _make_rule(lhs, None, rhs_list, action)
+        return _make_rule(lhs.value, None, rhs_list, action)
     def _stmt_rule2(self, lhs, _lp, lhs_name, _rp, _cc, rhs_list, _dot, action):
-        return _make_rule(lhs, lhs_name, rhs_list, action)
+        return _make_rule(lhs.value, lhs_name.value, rhs_list, action)
 
     def _rhs_list_start(self):
         return []
@@ -147,21 +155,21 @@ class LimeGrammar:
         return lst
 
     def _named_item(self, sym):
-        return (sym, None)
+        return (sym.value, None)
     def _named_item_with_name(self, sym, _lp, annot, _rp):
-        return (sym, annot)
+        return (sym.value, annot.value)
 
     def _named_item_lit(self, lit):
-        return self._lex_rhs(LexLiteral(lit))
+        return self._lex_rhs(LexLiteral(lit.value, lit.pos))
 
     def _named_item_lit_with_name(self, lit, _lp, annot, _rp):
-        return self._lex_rhs(LexLiteral(lit), annot)
+        return self._lex_rhs(LexLiteral(lit.value, lit.pos), annot.value)
 
     def _named_item_snippet(self, snippet):
         return self._lex_rhs(LexRegex(snippet.value.strip()))
 
     def _named_item_snippet_with_name(self, snippet, _lp, annot, _rp):
-        return self._lex_rhs(LexRegex(snippet.value.strip()), annot)
+        return self._lex_rhs(LexRegex(snippet.value.strip()), annot.value)
 
     def _lex_rhs(self, rhs, annot=None):
         tok_id = self._implicit_tokens.get(rhs)
@@ -171,7 +179,7 @@ class LimeGrammar:
         return (tok_id, annot)
 
     def _make_grammar(self, pg):
-        g = Grammar(*pg.rules, root=pg.root, symbols=pg.extra_symbols)
+        g = Grammar(*pg.rules, symbols=pg.extra_symbols)
         g.context_lexer = pg.context_lexer
         g.tokens = pg.tokens
         g.sym_annot = pg.sym_annot
@@ -179,41 +187,45 @@ class LimeGrammar:
         g.token_type = pg.token_type
         g.tests = pg.tests
         g.discards = pg.discards
+        g.root = pg.root
         return g
 
     def _test_list_new(self):
         return []
 
     def _test_list_id(self, tl, id):
-        tl.append(id)
+        tl.append(id.value)
         return tl
 
     def _test_list_lit(self, tl, lit):
-        tl.append(LexLiteral(lit))
+        tl.append(LexLiteral(lit.value, lit.pos))
         return tl
 
     def _grammar_kw_test(self, g, _kw, pattern, _sym, text, _dot):
-        g.tests.append((pattern, text))
+        g.tests.append((pattern, text, _kw.pos))
         return g
 
     def _grammar_kw_discard_snip(self, g, _kw, snip):
-        g.discards.append(LexRegex(snip.value))
+        g.discards.append(LexRegex(snip.value, snip.pos))
         return g
 
     def _grammar_kw_discard_ql(self, g, _kw, ql):
-        g.discards.append(LexLiteral(ql))
+        g.discards.append(LexLiteral(ql.value, ql.pos))
+        return g
+
+    def _grammar_set_root(self, g, root_name, pos):
+        if g.root is not None:
+            raise LimeSpecParsingError('multiple root specifiers', pos)
+        g.root = [root_name]
         return g
 
     def _grammar_kw_root(self, g, _kw, rule):
         return self._grammar_rule(
-            self._grammar_kw_root_id(g, _kw, rule.left),
+            self._grammar_set_root(g, rule.left, _kw.pos),
             rule)
 
-    def _grammar_kw_root_id(self, g, _kw, rule):
-        if g.root is not None:
-            raise RuntimeError('Multiple root specifiers')
-        g.root = rule
-        return g
+    def _grammar_kw_root_id(self, g, _kw, rule, _dot=None):
+        return self._grammar_set_root(g, rule.value, _kw.pos)
 
     grammar = Grammar(
         Rule('root', ('grammar',), action=_make_grammar),
@@ -283,14 +295,6 @@ class Token:
         else:
             return 'Token(%r, %r)' % (self.symbol, self.value)
 
-class InvalidTokenError(Exception):
-    def __init__(self, message, token_pos):
-        self.message = message
-        self.token_pos = token_pos
-
-    def __str__(self):
-        return '%s(%d,%d): error: %s' % (self.token_pos.filename, self.token_pos.line, self.token_pos.col, self.message)
-
 def _lime_lex_one(input, pos):
     ch = input[0]
     if ch.isspace():
@@ -324,7 +328,7 @@ def _lime_lex_one(input, pos):
                     return ('SNIPPET', depth, i), i+depth
                 nest -= 1
             i += 1
-        raise InvalidTokenError('unclosed snippet', pos)
+        raise LimeSpecParsingError('unclosed snippet', pos)
     elif ch in ('"', "'"):
         i = 1
         esc = False
@@ -334,10 +338,10 @@ def _lime_lex_one(input, pos):
             elif input[i] == '\\':
                 esc = True
             elif input[i] == '\n':
-                raise InvalidTokenError('end of line before closing quote', pos+input[:i])
+                raise LimeSpecParsingError('end of line before closing quote', pos+input[:i])
             i += 1
         if i == len(input):
-            raise InvalidTokenError('end of file before closing quote', pos)
+            raise LimeSpecParsingError('end of file before closing quote', pos)
         return ('QL', 1, i), i+1
     elif ch == '#':
         i = 1
@@ -351,7 +355,7 @@ def _lime_lex_one(input, pos):
         while i < len(input) and input[i] in ':=.':
             i += 1
         if i == 0:
-            raise InvalidTokenError('unexpected character', pos)
+            raise LimeSpecParsingError('unexpected character: %r' % ch, pos)
         return (input[:i], 0, i), i
 
 def _lime_lex(input, filename=None):
@@ -366,7 +370,7 @@ def _lime_lex(input, filename=None):
         input = input[next_input:]
 
 def _extract(tok):
-    return tok.value if tok.symbol != 'SNIPPET' else tok
+    return tok.value if tok.symbol not in ('ID', 'QL', 'SNIPPET') and not tok.symbol.startswith('kw_') else tok
 
 def parse_lime_grammar(input, filename=None):
     p = LimeGrammar()
@@ -384,27 +388,28 @@ class _LimeLexer:
     def __init__(self, dfa):
         self.set_dfa(dfa)
 
-    def tokens(self, s):
+    def _get_token(self, s, pos):
+        assert s
         state = iter(self.dfa.initial).next()
 
-        tok_start = 0
         for i, ch in enumerate(s):
-            for e in state.outedges:
-                if ch in e.label:
-                    state = e.target
+            for target, label in state.outedges:
+                if ch in label:
+                    state = target
                     break
             else:
-                yield s[tok_start:i], self.dfa.accept_labels.get(state)
-                tok_start = i
-                state = iter(self.dfa.initial).next()
-                for e in state.outedges:
-                    if ch in e.label:
-                        state = e.target
-                        break
-                else:
-                    raise RuntimeError('Invalid character encountered at position %d: %c' % (i, ch))
+                return (state.accept.token_id if state.accept is not None else None, s[0:i], pos), s[i:], pos + s[0:i]
 
-        yield s[tok_start:], self.dfa.accept_labels.get(state)
+        return (state.accept.token_id if state.accept is not None else None, s, pos), '', pos + s
+
+    def tokens(self, s, pos=None):
+        while s:
+            tok, tail, pos = self._get_token(s, pos)
+            if tok[0] is None:
+                s = tok[1] if tok[1] else s[:1]
+                raise LimeLexingError('unexpected: %r' % s, pos)
+            yield tok
+            s = tail
 
     def set_dfa(self, dfa):
         assert len(dfa.initial) == 1
@@ -430,7 +435,7 @@ class _LexDfaAccept:
         return '%d [%s]' % (self.token_id, ', '.join((str(tok) for tok in self.tokens)))
 
 def make_lime_parser(g, **kw):
-    p = make_lrparser(g, **kw)
+    p = make_lrparser(g, root=g.root, **kw)
     g = p.grammar
 
     def process_token(token, token_id):

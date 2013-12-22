@@ -64,25 +64,34 @@ class First:
     
     The objects are callable and, for a given word 'w', return the set
     { FIRST_k(u) | w =>* u, u terminal }.
-    
+
     >>> sorted(list(f(('item', 'item', 'item'))))
     [('item', 'item')]
     >>> sorted(list(f(())))
     [()]
     >>> sorted(list(f(('list',))))
     [(), ('item',), ('item', 'item')]
+
+    If the constructor parameter `nonterms` is set to True, the first sets
+    are extended to sentential forms, i.e. `{ FIRST_k(u) | w =>* u, u is a sentential form }`.
+    >>> f = First(g, k=2, nonterms=True)
+    >>> sorted(list(f(('list',))))
+    [(), ('item',), ('item', 'item'), ('list',), ('list', 'item')]
     """
-    def __init__(self, grammar, k=1):
+    def __init__(self, grammar, k=1, nonterms=False):
         """
         Given a grammar and a 'k', constructs the first-set table for all non-terminals.
         The table is then used by the '__call__' method.
         
         For the construction algorithm, see the Dragon book.
         """
-        self.grammar = Grammar(*grammar)
+        self.grammar = grammar
         self.k = k
 
-        self.table = dict((nonterm, set()) for nonterm in grammar.nonterms())
+        if nonterms:
+            self.table = dict((nonterm, set([(nonterm,)])) for nonterm in grammar.nonterms())
+        else:
+            self.table = dict((nonterm, set()) for nonterm in grammar.nonterms())
 
         # The sets in the table start empty and are iteratively filled.
         # The termination is guaranteed by the existence of the least fixed point.
@@ -94,7 +103,7 @@ class First:
                     if word not in self.table[rule.left]:
                         self.table[rule.left].add(word)
                         done = False
-    
+
     def __call__(self, word):
         """Returns FIRST_k(word) with respect to the associated grammar."""
         res = set([()])

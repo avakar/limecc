@@ -493,7 +493,8 @@ def lime_cpp(p):
     params['ast_stacks'] = [{'type': annot, 'i': i} for annot, i in annot_indexes.iteritems() if annot is not None]
     params['lex_stack'] = annot_indexes['std::string']
 
-    root_type = sym_annot.get(g.root())
+    assert len(p.root) == 1
+    root_type = sym_annot.get(p.root[0])
 
     rule_count = len(g)
     state_count = len(p.states)
