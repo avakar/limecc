@@ -1,7 +1,4 @@
-WS :: discard
-WS ~= {\s+}
-NUM :: {double}
-NUM ~= {[0-9]+}(x) { return atoi(x.c_str()); }
+%discard {\s+}
 
 expr :: {double}
 expr ::= mul.
@@ -21,3 +18,6 @@ term(A) ::= "-" atom(E). { A = -E; }
 atom :: {double}
 atom ::= NUM.
 atom(A) ::= "(" expr(E) ")".
+
+NUM :: {double}
+NUM ::= {[0-9]+}(x). { return atoi(x.c_str()); }

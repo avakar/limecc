@@ -87,7 +87,7 @@ private:
             throw std::runtime_error("Unexpected token");
         default:
             this->do_reduce(token);
-            if (token_info[static_cast<int>(token)].store)
+            if (token_info[static_cast<int>(token) - 1].store)
                 m_ast_stack_{{lex_stack}}.push_back(m_last_token);
             this->do_shift(token);
         }
@@ -463,7 +463,7 @@ def lime_cpp(p):
     params = {
         'class_name': 'parser',
         'ast_stacks': [],
-        'user_include': p.grammar.user_include
+        'user_include': p.grammar.user_include or ''
         }
     params.update(_make_lexer(p, 'parser'))
 
