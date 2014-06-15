@@ -203,7 +203,7 @@ class ActionConflictError(Exception):
         state = self.conflicting_state
 
         res = []
-        res.append('\n'.join([('>' if i in (self.item1, self.item2) else ' ') + item.format_item() for i, item in enumerate(state.itemlist)]))
+        res.append('\n'.join([('>' if i in (self.item1, self.item2) else ' ') + _format_trace(self.g, item) for i, item in enumerate(state.itemlist)]))
 
         while True:
             parent_symbol = state.parent_symbol
@@ -211,7 +211,7 @@ class ActionConflictError(Exception):
             state = self.states[next_id] if next_id != None else None
             if state is None:
                 break
-            res.append('\n'.join([('>' if item.next_token() == parent_symbol else ' ') + item.format_item() for i, item in enumerate(state.itemlist)]))
+            res.append('\n'.join([('>' if _next_token(self.g, item) == parent_symbol else ' ') + _format_trace(self.g, item) for i, item in enumerate(state.itemlist)]))
 
         return '\n\n'.join(reversed(res))
 
@@ -242,11 +242,36 @@ class ParsingError(RuntimeError):
 class UnexpectedTokenError(ParsingError):
     def __init__(self, token, pos=None):
         pos = _extract_location(token, pos)
-        ParsingError.__init__(self, 'unexpected token: %r' % _extract_symbol(token), pos)
+        ParsingError.__init__(self, 'unexpected token: %r (%r)' % (_extract_value(token), _extract_symbol(token)), pos)
         self.token = token
 
 class PrematureEndOfFileError(ParsingError):
     """Raised when an end of file is reached prematurely."""
+
+def _next_token(g, item):
+    return item.rule.right[item.index] if not item.final else None
+
+def _format_item(g, item, symbol_repr=repr):
+    right_syms = [symbol_repr(symbol) for symbol in item.rule.right]
+    if item.index == 0:
+        if not right_syms:
+            right_syms = ['. ']
+        else:
+            right_syms[0] = '. ' + right_syms[0]
+    elif item.index == len(right_syms):
+        right_syms[item.index - 1] = right_syms[item.index - 1] + ' . '
+    else:
+        right_syms[item.index - 1] = right_syms[item.index - 1] + ' . ' + right_syms[item.index]
+        del right_syms[self.index]
+
+    lookahead = ''.join((' (', ', '.join((symbol_repr(token) for token in item.lookahead)), ')')) if item.lookahead else ''
+    return ''.join((repr(item.rule.left), ' = ', ', '.join(right_syms), ';', lookahead))
+
+def _print_state(g, state, symbol_repr=repr):
+    res = []
+    for item in state.itemlist:
+        res.append(_format_item(g, item, symbol_repr=symbol_repr))
+    return '\n'.join(res)
 
 class _LrParser(object):
     """Represents a LR(k) parser.
@@ -312,36 +337,38 @@ class _LrParser(object):
         
         first = First(aug_grammar, k, nonterms=sentential_forms)
         
-        def _goto(state, symbol):
-            """Given a state and a symbol, constructs and returns the next state."""
-            itemlist = [_Item(item.rule, item.index + 1, item.lookahead) for item in state.itemset if item.next_token() == symbol]
-            if not itemlist:
-                return None
-            return State(itemlist, aug_grammar, first)
-        
-        state0 = State([_Item(aug_grammar[0], 0, ())], aug_grammar, first)
+        kernel0 = frozenset([_Item(aug_grammar[0], 0, ())])
+        state0 = State(kernel0, aug_grammar, first)
         states = [state0]
-        state_map = { state0: 0 }
-        
+
         i = 0
+        state_kernel_map = { kernel0: 0 }
         while i < len(states):
             state = states[i]
-            
-            for symbol in aug_grammar.symbols():
-                newstate = _goto(state, symbol)
-                if newstate is None:
+
+            parts = {}
+            for item in state.itemset:
+                sym = _next_token(aug_grammar, item)
+                if sym is None:
                     continue
-                    
-                oldstate_index = state_map.get(newstate)
+                part = parts.setdefault(sym, [])
+                part.append(_Item(item.rule, item.index + 1, item.lookahead))
+
+            for symbol, kernel in parts.iteritems():
+                kernel = frozenset(kernel)
+                oldstate_index = state_kernel_map.get(kernel)
                 if oldstate_index is not None:
                     state.goto[symbol] = oldstate_index
-                else:
-                    state.goto[symbol] = len(states)
-                    state_map[newstate] = len(states)
-                    newstate.parent_id = i
-                    newstate.parent_symbol = symbol
-                    states.append(newstate)
-            
+                    continue
+
+                newstate = State(kernel, aug_grammar, first)
+                state_kernel_map[kernel] = len(states)
+
+                state.goto[symbol] = len(states)
+                newstate.parent_id = i
+                newstate.parent_symbol = symbol
+                states.append(newstate)
+
             i += 1
         
         accepting_state = None
@@ -357,7 +384,7 @@ class _LrParser(object):
         
         for state_id, state in enumerate(states):
             for item_index, item in enumerate(state.itemlist):
-                nt = item.next_token()
+                nt = _next_token(aug_grammar, item)
                 if nt is None:
                     if item.rule.left == '':
                         accepting_state = state_id
@@ -382,7 +409,12 @@ class _LrParser(object):
                 
     def parse(self, sentence, context=None, extract_symbol=_extract_symbol,
             extract_value=_extract_value, prereduce_visitor=None, postreduce_visitor=None,
-            shift_visitor=None, state_visitor=None):
+            shift_visitor=None, state_visitor=None, reducer=None):
+
+        def default_reducer(rule, ctx, *args):
+            return rule.action(ctx, *args)
+        reducer = reducer or default_reducer
+
         it = iter(sentence)
 
         lookahead = []
@@ -439,7 +471,7 @@ class _LrParser(object):
                 if len(action.right) > 0:
                     if prereduce_visitor:
                         prereduce_visitor(*asts[-len(action.right):])
-                    new_ast = action.action(context, *asts[-len(action.right):])
+                    new_ast = reducer(action, context, *asts[-len(action.right):])
                     if postreduce_visitor:
                         new_ast = postreduce_visitor(action, new_ast)
                     del stack[-len(action.right):]
@@ -447,7 +479,7 @@ class _LrParser(object):
                 else:
                     if prereduce_visitor:
                         prereduce_visitor()
-                    new_ast = action.action(context)
+                    new_ast = reducer(action, context)
                     if postreduce_visitor:
                         new_ast = postreduce_visitor(action, new_ast)
                 
@@ -487,8 +519,9 @@ class State:
     corresponding to a reduce.
     """
     
-    def __init__(self, itemlist, grammar, first):
-        self._close(itemlist, grammar, first)
+    def __init__(self, kernel, grammar, first):
+        self.kernel = frozenset(kernel)
+        self._close(kernel, grammar, first)
         self.parent_id = None
         self.parent_symbol = None
 
@@ -507,26 +540,21 @@ class State:
     def __repr__(self):
         return repr(self.itemlist)
     
-    def print_state(self, symbol_repr=repr):
-        res = []
-        for item in self.itemlist:
-            res.append(item.format_item(symbol_repr))
-        return '\n'.join(res)
-
     def get_next_state(self, symbol, counters):
         return self.goto.get(symbol)
         
-    def _close(self, itemset, grammar, first):
+    def _close(self, kernel, grammar, first):
         """Given a list of items, returns the corresponding closed State object."""
         i = 0
-        
-        itemset = set(itemset)
-        itemlist = list(itemset)
+
+        itemset = set(kernel)
+        itemlist = list(kernel)
         while i < len(itemlist):
             curitem = itemlist[i]
             
-            for next_lookahead in curitem.next_lookaheads(first):
-                for next_rule in grammar.rules(curitem.next_token()):
+            rule_suffix = curitem.rule.right[curitem.index + 1:]
+            for next_lookahead in first(rule_suffix + curitem.lookahead):
+                for next_rule in grammar.rules(_next_token(grammar, curitem)):
                     newitem = _Item(next_rule, 0, next_lookahead)
                     if newitem not in itemset:
                         itemlist.append(newitem)
@@ -552,38 +580,6 @@ class _Item:
     
     def __hash__(self):
         return hash((self.rule, self.index, self.lookahead))
-        
-    def format_item(self, symbol_repr=repr):
-        right_syms = [symbol_repr(symbol) for symbol in self.rule.right]
-        if self.index == 0:
-            if not right_syms:
-                right_syms = ['. ']
-            else:
-                right_syms[0] = '. ' + right_syms[0]
-        elif self.index == len(right_syms):
-            right_syms[self.index - 1] = right_syms[self.index - 1] + ' . '
-        else:
-            right_syms[self.index - 1] = right_syms[self.index - 1] + ' . ' + right_syms[self.index]
-            del right_syms[self.index]
-
-        lookahead = ''.join((' (', ', '.join((symbol_repr(token) for token in self.lookahead)), ')')) if self.lookahead else ''
-        return ''.join((repr(self.rule.left), ' = ', ', '.join(right_syms), ';', lookahead))
-        
-    def is_kernel(self):
-        return self.index != 0 or self.rule.left == ''
-    
-    def next_token(self):
-        return self.rule.right[self.index] if not self.final else None
-    
-    def next_lookaheads(self, first):
-        rule_suffix = self.rule.right[self.index + 1:]
-        word = rule_suffix + self.lookahead
-        return first(word)
-    
-    def lookaheads(self, first):
-        rule_suffix = self.rule.right[self.index:]
-        word = rule_suffix + self.lookahead
-        return first(word)
 
 class _SymbolMatcher:
     def __init__(self, symbol):

@@ -5,16 +5,63 @@ This is the main script that accepts the grammar file and generates
 the C++ header file containing the parser and potentially the lexer.
 """
 
-from lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError, LexLiteral, _LimeLexer
+from lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError, LexLiteral
 from lrparser import ParsingError, InvalidGrammarError, ActionConflictError, make_lrparser, _extract_symbol
 from fa import minimize_enfa
+from rule import unbox_onetuples
 import sys, os.path
 
 def print_shift(tok):
     print 'shift:', tok
 
 def print_reduce(rule, ast):
-    print 'reduce:', rule
+    print 'reduce:', rule, ast
+    return ast
+
+def make_parser(parser_spec, filename=None):
+    if parser_spec is None and filename:
+        parser_spec = open(filename, 'rb')
+
+    if hasattr(parser_spec, 'read'):
+        parser_spec = parser_spec.read()
+
+    if isinstance(parser_spec, str):
+        g = parse_lime_grammar(parser_spec, filename=filename)
+        return make_lime_parser(g)
+    else:
+        return parser_spec
+
+def execute(parser, text, filename=None, debug=False):
+    if hasattr(text, 'read'):
+        text = text.read()
+
+    p = make_parser(parser, filename=filename)
+    g = p.grammar
+
+    script_globs = {}
+    if g.user_include:
+        exec g.user_include in script_globs, script_globs
+
+    action_cache = {}
+    def reducer(rule, ctx, *args):
+        if rule.lime_action is not None:
+            if rule.lime_action in action_cache:
+                return action_cache[rule.lime_action](ctx, *args)
+            lines = [' %s' % line for line in rule.lime_action.split('\n')]
+            lines.insert(0, 'def _limecc_action(%s):' % ', '.join([name for name in rule.rhs_names if name]))
+            exec '\n'.join(lines) in script_globs, script_globs
+
+            fn = script_globs['_limecc_action']
+            fnargs = [arg for arg, name in zip(args, rule.rhs_names) if name is not None]
+            return fn(*fnargs)
+        else:
+            return unbox_onetuples(*args)
+
+    if debug:
+        return p.lexparse(text, reducer=reducer, token_filter=script_globs.get('token_filter'), filename=filename,
+            shift_visitor=print_shift, postreduce_visitor=print_reduce)
+    else:
+        return p.lexparse(text, reducer=reducer, token_filter=script_globs.get('token_filter'), filename=filename)
 
 def _main():
     from optparse import OptionParser
@@ -22,6 +69,7 @@ def _main():
         usage='usage: %prog [options] filename')
     opts.add_option('-o', '--output', help='The file to store the generated parser/lexer to')
     opts.add_option('-p', '--parse', help='Parse the text and print its AST')
+    opts.add_option('-E', '--execute', help='Execute semantic actions (in Python)')
     opts.add_option('--print-dfas', action="store_true", default=False, help='Show the states of the lexer\'s DFA')
     opts.add_option('--print-states', action="store_true", dest="print_states", default=False, help='Show the states of the LR automaton')
     opts.add_option('--print-lime-grammar', action="store_true", dest="print_lime_grammar", default=False, help='Prints the grammar of the lime language')
@@ -101,9 +149,14 @@ SNIPPET ::= <an arbitrary text enclosed in braces>.
                         print 'action at %s: %s' % (lookahead_trans(la), repr(action))
 
             if options.parse:
-                print p.lexparse(options.parse, shift_visitor=print_shift, postreduce_visitor=print_reduce)
+                with open(options.parse, 'rb') as fin:
+                    print p.lexparse(fin.read(), shift_visitor=print_shift, postreduce_visitor=print_reduce)
 
-            if (not options.tests_only and not options.print_dfas and not options.print_states and not options.parse) or options.output:
+            if options.execute:
+                with open(options.execute, 'rb') as fin:
+                    print execute(p, fin)
+
+            if (not options.tests_only and not options.print_dfas and not options.print_states and not options.parse and not options.execute) or options.output:
                 from lime_cpp import lime_cpp
                 with open(output, 'w') as fout:
                     fout.write(lime_cpp(p))

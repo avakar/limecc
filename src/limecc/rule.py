@@ -1,3 +1,8 @@
+def unbox_onetuples(*args):
+    if len(args) == 1:
+        return args[0]
+    return args
+
 def _unbox_onetuples(ctx, *args):
     """Returns the input tuple, unboxed if it has length 1.
 
@@ -19,9 +24,7 @@ def _unbox_onetuples(ctx, *args):
     >>> _unbox_onetuples(None, 'data1', 'data2')
     ('data1', 'data2')
     """
-    if len(args) == 1:
-        return args[0]
-    return args
+    return unbox_onetuples(*args)
 
 class Rule:
     """Represents a single production rule of a grammar.

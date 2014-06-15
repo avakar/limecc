@@ -188,6 +188,12 @@ class LimeGrammar:
         g.tests = pg.tests
         g.discards = pg.discards
         g.root = pg.root
+
+        g.token_names = {}
+        for rule in pg.rules:
+            if len(rule.right) == 1 and isinstance(rule.right[0], int):
+                g.token_names[rule.right[0]] = rule.left
+
         return g
 
     def _test_list_new(self):
@@ -306,7 +312,7 @@ def _lime_lex_one(input, pos):
         i = 1
         while i < len(input):
             ch = input[i]
-            if not ch.isalnum() and ch != '_':
+            if not ch.isalnum() and ch not in '-_':
                 break
             i += 1
         if input[0] != '%':
@@ -377,18 +383,20 @@ def parse_lime_grammar(input, filename=None):
     toks = _lime_lex(input, filename=filename)
     return p.parse(toks, extract_value=_extract)
 
-def _lex(p, lex, text):
-    g = p.grammar
-    for tok, tok_id in lex.tokens(text):
-        tok_id = g.lex_rules[tok_id][0][0]
-        annot = g.sym_annot.get(tok_id)
-        yield (tok_id, tok)
-
-class _LimeLexer:
-    def __init__(self, dfa):
+class DfaEngine:
+    """Executes a DFA over a provided text.
+    
+    Produces tokens in the form of (tok, content, pos),
+    where tok is the value stored in the accepting state,
+    potentially transformed by the extract function specified
+    in the constructor. The content is the substring
+    matching the token's production.
+    """
+    def __init__(self, dfa, extract=id):
+        self._extract = extract
         self.set_dfa(dfa)
 
-    def _get_token(self, s, pos):
+    def _get_token(self, s):
         assert s
         state = iter(self.dfa.initial).next()
 
@@ -398,32 +406,51 @@ class _LimeLexer:
                     state = target
                     break
             else:
-                return (state.accept.token_id if state.accept is not None else None, s[0:i], pos), s[i:], pos + s[0:i]
+                return self._extract(state.accept), s[0:i], s[i:]
 
-        return (state.accept.token_id if state.accept is not None else None, s, pos), '', pos + s
+        return self._extract(state.accept), s, ''
 
     def tokens(self, s, pos=None):
         while s:
-            tok, tail, pos = self._get_token(s, pos)
-            if tok[0] is None:
-                s = tok[1] if tok[1] else s[:1]
+            tok, tok_content, tail = self._get_token(s)
+            if tok is None:
+                s = tok_content or s[:1]
                 raise LimeLexingError('unexpected: %r' % s, pos)
-            yield tok
+            yield (tok, tok_content, pos)
+            if pos is not None:
+                pos += tok_content
             s = tail
 
     def set_dfa(self, dfa):
         assert len(dfa.initial) == 1
         self.dfa = dfa
 
-def _lexparse(p, text, **kw):
-    if not p.grammar.context_lexer:
-        lex = _LimeLexer(p.lexer)
-        return p.parse(_lex(p, lex, text), **kw)
-    else:
-        lex = _LimeLexer(p.states[0].lexer)
-        def update_lex(state):
-            lex.set_dfa(state.lexer)
-        return p.parse(_lex(p, lex, text), state_visitor=update_lex, **kw)
+def _lexparse(p, text, token_filter=None, filename=None, pos=None, **kw):
+    if pos is None and filename is not None:
+        pos = TokenPos(filename, 1, 1)
+
+    lex = DfaEngine(p.lexers[p.states[0].lexer_id], lambda x: x.token_id)
+
+    toks = (filter(lambda tok: tok[0] != p.discard_id, lex.tokens(text, pos=pos)))
+
+    if token_filter:
+        rev = {}
+        for k, v in p.grammar.token_names.iteritems():
+            rev[v] = k
+
+        def translate_toks(toks):
+            for tok, text, pos in toks:
+                yield p.grammar.token_names.get(tok, tok), text, pos
+
+        def detranslate_toks(toks):
+            for tok, text, pos in toks:
+                yield rev.get(tok, tok), text, pos
+
+        toks = detranslate_toks(token_filter(translate_toks(toks)))
+
+    def update_lex(state):
+        lex.set_dfa(p.lexers[state.lexer_id])
+    return p.parse(toks, state_visitor=update_lex, **kw)
 
 class _LexDfaAccept:
     def __init__(self, token_id, prio, tokens):
