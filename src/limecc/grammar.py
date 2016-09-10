@@ -1,4 +1,4 @@
-from rule import Rule
+from .rule import Rule
 
 class Grammar:
     """Represents a set of production rules.
@@ -9,7 +9,7 @@ class Grammar:
     >>> g = Grammar(
     ...     Rule('list'),
     ...     Rule('list', ('list', 'item')))
-    >>> print g
+    >>> print(g)
     'list' = ;
     'list' = 'list', 'item';
     
@@ -19,7 +19,7 @@ class Grammar:
     Rule('list')
     >>> len(g)
     2
-    >>> for rule in g: print rule
+    >>> for rule in g: print(rule)
     'list' = ;
     'list' = 'list', 'item';
     
@@ -41,11 +41,11 @@ class Grammar:
     
     The grammar also allows fast access to a set of rules with a given symbol on the left.
     
-    >>> for rule in g.rules('list'): print rule
+    >>> for rule in g.rules('list'): print(rule)
     'list' = ;
     'list' = 'list', 'item';
-    >>> for rule in g.rules('unreferenced'): print rule
-    >>> for rule in g.rules('root'): print rule
+    >>> for rule in g.rules('unreferenced'): print(rule)
+    >>> for rule in g.rules('root'): print(rule)
     'root' = 'list';
     """
     def __init__(self, *rules, **kw):
@@ -80,7 +80,7 @@ class Grammar:
         
     def __str__(self):
         """
-        >>> print Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b')))
+        >>> print(Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b'))))
         'a' = 'b', 'c';
         'a' = 'c', 'b';
         """
@@ -88,7 +88,7 @@ class Grammar:
     
     def __repr__(self):
         """
-        >>> print repr(Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b'))))
+        >>> print(repr(Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b')))))
         Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b')))
         """
         return 'Grammar(%s)' % ', '.join(repr(rule) for rule in self._rules)
@@ -97,10 +97,10 @@ class Grammar:
         """Retrieves the set of rules with a given non-terminal on the left.
         
         >>> g = Grammar(Rule('a', ('b',)), Rule('b', ('c',)), Rule('b', ('d',)))
-        >>> for rule in g.rules('a'): print rule
+        >>> for rule in g.rules('a'): print(rule)
         'a' = 'b';
-        >>> for rule in g.rules('c'): print rule
-        >>> for rule in g.rules('b'): print rule
+        >>> for rule in g.rules('c'): print(rule)
+        >>> for rule in g.rules('b'): print(rule)
         'b' = 'c';
         'b' = 'd';
         """

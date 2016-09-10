@@ -1,6 +1,6 @@
-from grammar import Rule, Grammar
-from lrparser import make_lrparser
-from fa import Automaton, State
+from .grammar import Rule, Grammar
+from .lrparser import make_lrparser
+from .fa import Automaton, State
 
 class Lit:
     def __init__(self, charset, inv=False):

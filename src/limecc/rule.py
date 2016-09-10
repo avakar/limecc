@@ -36,19 +36,19 @@ class Rule:
     would be constructed as follows.
     
     >>> r = Rule('list', ('list', 'item'))
-    >>> print r
+    >>> print(r)
     'list' = 'list', 'item';
     
     The symbols can be arbitrary objects, not just strings. They must,
     however, be hashable. (Hashability is not enforced by the Rule class
     directly.)
     
-    >>> print Rule(0, (1, 2))
+    >>> print(Rule(0, (1, 2)))
     0 = 1, 2;
     
     Occasionaly, you must pass a one-tuple.
     
-    >>> print Rule('root', ('list',))
+    >>> print(Rule('root', ('list',)))
     'root' = 'list';
     
     Note that terminal and non-terminal symbols are written
@@ -58,12 +58,12 @@ class Rule:
     
     A rule can have no symbols on the right, such rules produce empty strings.
     
-    >>> print Rule('e', ())
+    >>> print(Rule('e', ()))
     'e' = ;
     
     An empty tuple is also the default for the second arguement.
     
-    >>> print Rule('e')
+    >>> print(Rule('e'))
     'e' = ;
     
     The left and right symbols can be accessed via 'left' and 'right' members.
@@ -110,31 +110,31 @@ class Rule:
 
     def __str__(self):
         """
-        >>> print Rule('a', ('b', 'c'))
+        >>> print(Rule('a', ('b', 'c')))
         'a' = 'b', 'c';
-        >>> print Rule('a')
+        >>> print(Rule('a'))
         'a' = ;
         >>> def _custom_action(ctx): pass
-        >>> print Rule('a', (), _custom_action)
+        >>> print(Rule('a', (), _custom_action))
         'a' = ; {_custom_action}
-        >>> print Rule('a', (), lambda x: x)
+        >>> print(Rule('a', (), lambda x: x))
         'a' = ; {<lambda>}
         """
         r = [repr(self.left), ' = ', ', '.join(repr(symbol) for symbol in self.right), ';']
         if self.action != _unbox_onetuples:
-            r.extend((' {', getattr(self.action, 'func_name', ''), '}'))
+            r.extend((' {', getattr(self.action, '__name__', ''), '}'))
         return ''.join(r)
 
     def __repr__(self):
         """
-        >>> print repr(Rule('a', ('b', 'c')))
+        >>> print(repr(Rule('a', ('b', 'c'))))
         Rule('a', ('b', 'c'))
-        >>> print repr(Rule('a'))
+        >>> print(repr(Rule('a')))
         Rule('a')
         >>> def _my_action(ctx): return None
-        >>> print repr(Rule('a', (), action=_my_action)) # doctest: +ELLIPSIS
+        >>> print(repr(Rule('a', (), action=_my_action))) # doctest: +ELLIPSIS
         Rule('a', (), <function _my_action...>)
-        >>> print repr(Rule('a', (), action=lambda x: x)) # doctest: +ELLIPSIS
+        >>> print(repr(Rule('a', (), action=lambda x: x))) # doctest: +ELLIPSIS
         Rule('a', (), <function <lambda>...>)
         """
         if self.action != _unbox_onetuples:

@@ -6,7 +6,7 @@ The iterable must support slices, joining with operator + and must return
 their length through the 'len' function.
 """
 
-from grammar import Grammar, Rule
+from .grammar import Grammar, Rule
 
 def first(word, k=1):
     """Returns FIRST_k(word).

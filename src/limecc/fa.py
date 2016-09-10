@@ -1,6 +1,6 @@
 """
 This module provides means to represent finite automata
-and a set of routines to manipulate them.
+and routines to manipulate them.
 
 States
 ------
@@ -10,11 +10,11 @@ to another (possibly the original). States are also
 labeled by an accept label, which defaults to False.
 
     >>> s = State(accept=True)
-    >>> print s
+    >>> print(s)
     <State, 0 outgoing, 1 reachable, accept=True>
 
     >>> s = State()
-    >>> print s
+    >>> print(s)
     <State, 0 outgoing, 1 reachable>
     >>> s.reachable_states()
     [<State, 0 outgoing, 1 reachable>]
@@ -38,32 +38,30 @@ States can be interconnected using the `connect_to` method.
 
     >>> s2 = State(accept=True)
     >>> s.connect_to(s2, label=set('abc'))
-    >>> sorted(s.reachable_states())
-    [<State, 1 outgoing, 2 reachable>, <State, 0 outgoing, 1 reachable, accept=True>]
 
 You can visualize a graph starting at a specific state by
 calling `format_graph` or `print_graph` method.
 
-    >>> print s.format_graph()
-    state 0
-        edge to 1 over set(['a', 'c', 'b'])
+    >>> print(s.format_graph())
+    state 0 initial
+        edge to 1 over ['a', 'b', 'c']
     state 1
         accept True
 
 Printing state graphs can also be more generically peformed
 using the `format_reachable_states` functions.
 
-    >>> print format_reachable_states([s], mark_initial=True)
+    >>> print(format_reachable_states([s], mark_initial=True))
     state 0 initial
-        edge to 1 over set(['a', 'c', 'b'])
+        edge to 1 over ['a', 'b', 'c']
     state 1
         accept True
 
 Multiple initial states can be specified.
 
-    >>> print format_reachable_states([s, s2], mark_initial=True)
+    >>> print(format_reachable_states([s, s2], mark_initial=True))
     state 0 initial
-        edge to 1 over set(['a', 'c', 'b'])
+        edge to 1 over ['a', 'b', 'c']
     state 1 initial
         accept True
 
@@ -73,19 +71,22 @@ Automata are simple objects of type `Automaton`, which merely
 hold a set of initial states. Automata can share states.
 
     >>> a = Automaton(s)
-    >>> print a
+    >>> print(a)
     <Automaton, 1 initial, 2 reachable>
-    >>> print a.format_graph()
+    >>> print(a.format_graph())
     state 0 initial
-        edge to 1 over set(['a', 'c', 'b'])
+        edge to 1 over ['a', 'b', 'c']
     state 1
         accept True
 
 You can always get the list of states of an automaton using
 the `reachable_states` method.
 
-    >>> print sorted(a.reachable_states())
-    [<State, 1 outgoing, 2 reachable>, <State, 0 outgoing, 1 reachable, accept=True>]
+    >>> print(a.format_graph())
+    state 0 initial
+        edge to 1 over ['a', 'b', 'c']
+    state 1
+        accept True
 
 An automaton is in a DFA form if
 
@@ -103,25 +104,26 @@ yield automata that do not share states with the input automata.
     >>> s3 = State(accept=True)
     >>> s2.connect_to(s3, set('abc'))
     >>> s2.connect_to(s2, set('abc'))
-    >>> print a.format_graph()
+    >>> print(a.format_graph())
     state 0 initial
-        edge to 1 over set(['a', 'c', 'b'])
+        edge to 1 over ['a', 'b', 'c']
     state 1
-        edge to 2 over set(['a', 'c', 'b'])
-        edge to 1 over set(['a', 'c', 'b'])
+        edge to 2 over ['a', 'b', 'c']
+        edge to 1 over ['a', 'b', 'c']
         accept True
     state 2
         accept True
     >>> a = minimize_enfa(a)
-    >>> print a.format_graph()
+    >>> print(a.format_graph())
     state 0 initial
-        edge to 1 over set(['a', 'c', 'b'])
+        edge to 1 over ['a', 'b', 'c']
     state 1
-        edge to 1 over set(['a', 'c', 'b'])
+        edge to 1 over ['a', 'b', 'c']
         accept True
 """
 
 import sys
+import six
 
 def _reachable_states(initial_set):
     q = list(initial_set)
@@ -157,6 +159,8 @@ def format_reachable_states(initial_set, mark_initial=False):
         for target, label in state.outedges:
             if label is None:
                 res.append('    edge to %d\n' % (state_map[target],))
+            elif isinstance(label, set):
+                res.append('    edge to %d over %s\n' % (state_map[target], sorted(label)))
             else:
                 res.append('    edge to %d over %s\n' % (state_map[target], str(label)))
         if state.accept is not None:
@@ -178,7 +182,7 @@ class State:
         self.outedges.append((target, label))
 
     def format_graph(self):
-        return format_reachable_states([self])
+        return format_reachable_states([self], mark_initial=True)
 
     def print_graph(self, file=sys.stderr):
         print >>file, self.format_graph()
@@ -258,7 +262,7 @@ def convert_enfa_to_dfa(enfa, accept_combine=min):
                     else:
                         edges[target] &= label
         while edges:
-            it = edges.iteritems()
+            it = six.iteritems(edges)
             target, s = next(it)
             targets = set([target])
             current_set = s
@@ -273,22 +277,26 @@ def convert_enfa_to_dfa(enfa, accept_combine=min):
                 processed.add(dfa_target)
                 q.append(dfa_target)
 
-            for target in edges.keys():
+            for target in list(six.iterkeys(edges)):
                 reduced = edges[target] - current_set
                 if not reduced:
                     del edges[target]
                 else:
                     edges[target] = reduced
 
-    def precombine(lhs, rhs):
-        if lhs is None:
-            return rhs
-        if rhs is None:
-            return lhs
-        return accept_combine(lhs, rhs)
-
     for state in dfa.reachable_states():
-        state.accept = reduce(precombine, (enfa_state.accept for enfa_state in inv_state_map[state]))
+        r = None
+        for enfa_state in inv_state_map[state]:
+            if enfa_state.accept is None:
+                continue
+
+            if r is None:
+                r = enfa_state.accept
+                continue
+
+            r = accept_combine(r, enfa_state.accept)
+
+        state.accept = r
     return dfa
 
 def minimize_enfa(fa, accept_combine=min):
@@ -309,14 +317,14 @@ def minimize_enfa(fa, accept_combine=min):
             accept_label_map.setdefault(state.accept, set()).add(state)
 
     partition = set([frozenset(no_accept)])
-    for states in accept_label_map.itervalues():
+    for states in six.itervalues(accept_label_map):
         partition.add(frozenset(states))
 
     def _get_maximum_charsets(item_charset_map):
         item_charset_map = dict(item_charset_map)
         while item_charset_map:
-            it = item_charset_map.iteritems()
-            item, charset = it.next()
+            it = six.iteritems(item_charset_map)
+            item, charset = next(it)
             items = set([item])
             current_charset = charset
             for item, charset in it:
@@ -327,7 +335,7 @@ def minimize_enfa(fa, accept_combine=min):
 
             yield items, current_charset
 
-            for item in item_charset_map.keys():
+            for item in list(six.iterkeys(item_charset_map)):
                 reduced = item_charset_map[item] - current_charset
                 if not reduced:
                     del item_charset_map[item]
@@ -360,14 +368,14 @@ def minimize_enfa(fa, accept_combine=min):
                 target_map = {}
                 for source, target in edges:
                     target_map.setdefault(partition_map[target], set()).add(source)
-                for part, source_set in target_map.iteritems():
-                    for source, siblings in sibling_map.iteritems():
+                for part, source_set in six.iteritems(target_map):
+                    for source, siblings in six.iteritems(sibling_map):
                         if source in source_set:
                             siblings &= source_set
                         else:
                             siblings -= source_set
 
-            for sibling_set in sibling_map.itervalues():
+            for sibling_set in six.itervalues(sibling_map):
                 new_partition.add(frozenset(sibling_set))
 
         if partition == new_partition:
@@ -382,7 +390,7 @@ def minimize_enfa(fa, accept_combine=min):
         new_state = State(accept=next(iter(state_class)).accept)
         new_state_map[state_class] = new_state
 
-    for state_class, source in new_state_map.iteritems():
+    for state_class, source in six.iteritems(new_state_map):
         target_labels = {}
         for state in state_class:
             for target, label in state.outedges:
@@ -397,7 +405,7 @@ def minimize_enfa(fa, accept_combine=min):
             else:
                 target_map[new_state_map[target]] |= charset
 
-        for target, charset in target_map.iteritems():
+        for target, charset in six.iteritems(target_map):
             source.connect_to(target, charset)
 
     return Automaton(new_state_map[partition_map[next(iter(fa.initial))]])

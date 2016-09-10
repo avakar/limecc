@@ -1,4 +1,4 @@
-from lime_grammar import LexRegex
+from .lime_grammar import LexRegex
 from jinja2 import Template
 
 hpp_templ = Template(r"""

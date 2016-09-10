@@ -5,17 +5,18 @@ This is the main script that accepts the grammar file and generates
 the C++ header file containing the parser and potentially the lexer.
 """
 
-from lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError, LexLiteral
-from lrparser import ParsingError, InvalidGrammarError, ActionConflictError, make_lrparser, _extract_symbol
-from fa import minimize_enfa
-from rule import unbox_onetuples
+from __future__ import print_function
+from .lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError, LexLiteral
+from .lrparser import ParsingError, InvalidGrammarError, ActionConflictError, make_lrparser, _extract_symbol
+from .fa import minimize_enfa
+from .rule import unbox_onetuples
 import sys, os.path
 
 def print_shift(tok):
-    print 'shift:', tok
+    print('shift: {}'.format(tok))
 
 def print_reduce(rule, ast):
-    print 'reduce:', rule, ast
+    print('reduce: {} {}'.format(rule, ast))
     return ast
 
 def make_parser(parser_spec, filename=None):
@@ -40,7 +41,8 @@ def execute(parser, text, filename=None, debug=False):
 
     script_globs = {}
     if g.user_include:
-        exec g.user_include in script_globs, script_globs
+        compiled = compile(g.user_include, '__main__', 'exec')
+        eval(compiled, script_globs, script_globs)
 
     action_cache = {}
     def reducer(rule, ctx, *args):
@@ -49,7 +51,9 @@ def execute(parser, text, filename=None, debug=False):
                 return action_cache[rule.lime_action](ctx, *args)
             lines = [' %s' % line for line in rule.lime_action.split('\n')]
             lines.insert(0, 'def _limecc_action(%s):' % ', '.join([name for name in rule.rhs_names if name]))
-            exec '\n'.join(lines) in script_globs, script_globs
+
+            compiled = compile('\n'.join(lines), '__main__', 'exec')
+            eval(compiled, script_globs, script_globs)
 
             fn = script_globs['_limecc_action']
             fnargs = [arg for arg, name in zip(args, rule.rhs_names) if name is not None]
@@ -83,18 +87,18 @@ def _main():
     (options, args) = opts.parse_args()
 
     if options.output and len(args) != 1:
-        print >>sys.stderr, 'error: only one source file can be passed if -o is given'
+        print('error: only one source file can be passed if -o is given', file=sys.stderr)
         return 1
 
     if options.print_lime_grammar:
         def _convert(sym):
             if sym.startswith('kw_'):
                 return '"%%%s"' % sym[3:]
-        print """\
+        print("""\
 ID ::= {[a-zA-Z0-9_\\-]+}.
 QL ::= <a single- or double- quoted literal>.
 SNIPPET ::= <an arbitrary text enclosed in braces>.
-"""
+""")
         print_grammar_as_lime(LimeGrammar.grammar, translate=_convert)
 
     for fname in args:
@@ -120,18 +124,18 @@ SNIPPET ::= <an arbitrary text enclosed in braces>.
                     test_parser = make_lrparser(g, root=pattern, sentential_forms=True)
                     try:
                         test_parser.parse(partial_lex(text))
-                    except ParsingError, e:
-                        print ParsingError('test failed: %s' % e.message, pos).format()
+                    except ParsingError as e:
+                        print(ParsingError('test failed: %s' % e.message, pos).format())
 
             if options.print_dfas:
                 for token_id, fa in enumerate(p.lex_dfas):
-                    print token_id, (p.grammar.tokens[token_id] if token_id < len(p.grammar.tokens) else '%discard')
+                    print('{} {}'.format(token_id, (p.grammar.tokens[token_id] if token_id < len(p.grammar.tokens) else '%discard')))
                     minimize_enfa(fa).print_graph()
-                    print ''
+                    print('')
                 for i, lexer in enumerate(p.lexers):
-                    print 'lexer', i
+                    print('lexer {}'.format(i))
                     lexer.print_graph()
-                    print ''
+                    print('')
 
             if options.print_states:
                 def sym_trans(sym):
@@ -141,37 +145,37 @@ SNIPPET ::= <an arbitrary text enclosed in braces>.
                     return '(' + ', '.join(sym_trans(sym) for sym in la) + ')'
 
                 for i, state in enumerate(p.states):
-                    print "0x%x(%d):" % (i, i)
-                    print state.print_state(sym_trans)
+                    print("0x%x(%d):" % (i, i))
+                    print(state.print_state(sym_trans))
                     for sym, next_state_id in sorted(state.goto.iteritems()):
-                        print 'goto %d(0x%x) over %s' % (next_state_id, next_state_id, sym_trans(sym))
+                        print('goto %d(0x%x) over %s' % (next_state_id, next_state_id, sym_trans(sym)))
                     for la, action in sorted(state.action.iteritems()):
-                        print 'action at %s: %s' % (lookahead_trans(la), repr(action))
+                        print('action at %s: %s' % (lookahead_trans(la), repr(action)))
 
             if options.parse:
                 with open(options.parse, 'rb') as fin:
-                    print p.lexparse(fin.read(), shift_visitor=print_shift, postreduce_visitor=print_reduce)
+                    print(p.lexparse(fin.read(), shift_visitor=print_shift, postreduce_visitor=print_reduce))
 
             if options.execute:
                 with open(options.execute, 'rb') as fin:
-                    print execute(p, fin)
+                    print(execute(p, fin))
 
             if (not options.tests_only and not options.print_dfas and not options.print_states and not options.parse and not options.execute) or options.output:
                 from lime_cpp import lime_cpp
                 with open(output, 'w') as fout:
                     fout.write(lime_cpp(p))
 
-        except ParsingError, e:
-            print str(e)
+        except ParsingError as e:
+            print(str(e))
             return 1
-        except LexerConflictError, e:
-            print e.message
+        except LexerConflictError as e:
+            print(e.message)
             return 1
-        except ActionConflictError, e:
-            print e.message
+        except ActionConflictError as e:
+            print(e.message)
             e.print_trace()
             return 1
-        except Exception, e:
+        except Exception as e:
             import traceback
             traceback.print_exc(sys.stderr)
             return 1

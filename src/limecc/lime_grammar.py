@@ -15,11 +15,11 @@ code that is not interpreted by the parser, but is passed on in
 the corresponding Rule object.
 """
 
-from grammar import Rule, Grammar
-from lrparser import make_lrparser, ParsingError
+from .grammar import Rule, Grammar
+from .lrparser import make_lrparser, ParsingError
 import types, sys
-from fa import union_fa, minimize_enfa
-from regex_parser import parse_regex, make_enfa_from_regex, make_dfa_from_literal
+from .fa import union_fa, minimize_enfa
+from .regex_parser import parse_regex, make_enfa_from_regex, make_dfa_from_literal
 
 class LimeSpecParsingError(ParsingError):
     """Raised if there is a semantic error in the lime specification."""

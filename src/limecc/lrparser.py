@@ -173,8 +173,8 @@ and goto tables.
 See the documentation for the `State` class for more information.
 """
 
-from grammar import Grammar, Rule
-from first import First
+from .grammar import Grammar, Rule
+from .first import First
 import sys
 
 def _extract_symbol(token):
