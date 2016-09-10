@@ -570,6 +570,3 @@ num(A) ::= num(B) '_'. { A = B; }
 
     g = parse_lime_grammar(test)
     p = make_lrparser(g)
-
-#    import doctest
-#    doctest.testmod()

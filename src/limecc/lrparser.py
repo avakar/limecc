@@ -593,7 +593,3 @@ class _SymbolMatcher:
 
 def make_lrparser(g, k=1, keep_states=False, root=None, sentential_forms=False):
     return _LrParser(g, k=k, keep_states=keep_states, root=root, sentential_forms=sentential_forms)
-
-if __name__ == "__main__":
-    import doctest
-    doctest.testmod()

@@ -410,7 +410,3 @@ def union_fa(fas):
     for fa in fas:
         initial.update(fa.initial)
     return Automaton(*initial)
-
-if __name__ == '__main__':
-    import doctest
-    doctest.testmod()

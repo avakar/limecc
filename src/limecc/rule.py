@@ -144,7 +144,3 @@ class Rule:
         else:
             args = (self.left,)
         return 'Rule(%s)' % ', '.join((repr(arg) for arg in args))
-
-if __name__ == "__main__":
-    import doctest
-    doctest.testmod()

@@ -16,5 +16,6 @@ setup(name='limecc',
         'console_scripts': [
             'limecc = limecc.limecc:_main',
             ],
-        }
+        },
+    test_suite = "limecc.tests",
     )

@@ -129,7 +129,3 @@ class Grammar:
     def terminals(self):
         """Returns an iterable representing the current set of all terminal symbols."""
         return self._symbols - self._nonterms
-
-if __name__ == "__main__":
-    import doctest
-    doctest.testmod()

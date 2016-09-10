@@ -179,7 +179,3 @@ def make_enfa_from_regex(regex, accept_label):
 
     add_regex_edge(initial, final, regex)
     return Automaton(initial)
-
-if __name__ == '__main__':
-    import doctest
-    doctest.testmod()
