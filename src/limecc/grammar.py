@@ -1,11 +1,15 @@
-from .rule import Rule
-
 class Grammar:
     """Represents a set of production rules.
     
-    Each rule is encapsulated by an instance of the 'Rule' class.
+    A rule is an object with the members
+     * `left`, which must be hashable,
+     * `right`, which must ba an iterable of hashable objects, and
+     * `action`.
+
+    Typically, the `Rule` class is used to represent a rule.
     The rules are supplied during construction.
     
+    >>> from .rule import Rule
     >>> g = Grammar(
     ...     Rule('list', ()),
     ...     Rule('list', ('list', 'item')))
@@ -49,7 +53,7 @@ class Grammar:
     'root' = 'list';
     """
     def __init__(self, *rules, **kw):
-        if any((opt != 'symbols' for opt in kw)) or any((not isinstance(rule, Rule) for rule in rules)):
+        if any((opt != 'symbols' for opt in kw)):
             raise AttributeError('Unknown argument')
 
         self._rules = rules
@@ -80,6 +84,7 @@ class Grammar:
         
     def __str__(self):
         """
+        >>> from .rule import Rule
         >>> print(Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b'))))
         'a' = 'b', 'c';
         'a' = 'c', 'b';
@@ -88,6 +93,7 @@ class Grammar:
     
     def __repr__(self):
         """
+        >>> from .rule import Rule
         >>> print(repr(Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b')))))
         Grammar(Rule('a', ('b', 'c')), Rule('a', ('c', 'b')))
         """
@@ -96,6 +102,7 @@ class Grammar:
     def rules(self, left):
         """Retrieves the set of rules with a given non-terminal on the left.
         
+        >>> from .rule import Rule
         >>> g = Grammar(Rule('a', ('b',)), Rule('b', ('c',)), Rule('b', ('d',)))
         >>> for rule in g.rules('a'): print(rule)
         'a' = 'b';
@@ -112,6 +119,7 @@ class Grammar:
         All non-terminal symbols are considered terminal,
         regardless of whether they are referenced by the grammar.
         
+        >>> from .rule import Rule
         >>> g = Grammar(Rule('a', ('b',)), Rule('b', ('c',)))
         >>> tuple(g.is_terminal(sym) for sym in 'abcd')
         (False, False, True, True)

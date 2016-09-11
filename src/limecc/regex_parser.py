@@ -1,4 +1,5 @@
-from .grammar import Rule, Grammar
+from .rule import Rule
+from .grammar import Grammar
 from .lrparser import make_lrparser
 from .fa import Automaton, State
 
