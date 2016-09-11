@@ -9,8 +9,12 @@ from __future__ import print_function
 from .lime_grammar import parse_lime_grammar, make_lime_parser, LimeGrammar, print_grammar_as_lime, LexerConflictError, LexLiteral
 from .lrparser import ParsingError, InvalidGrammarError, ActionConflictError, make_lrparser, _extract_symbol
 from .fa import minimize_enfa
-from .rule import unbox_onetuples
 import sys, os.path
+
+def unbox_onetuples(*args):
+    if len(args) == 1:
+        return args[0]
+    return args
 
 def print_shift(tok):
     print('shift: {}'.format(tok))

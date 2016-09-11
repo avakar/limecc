@@ -7,7 +7,7 @@ class Grammar:
     The rules are supplied during construction.
     
     >>> g = Grammar(
-    ...     Rule('list'),
+    ...     Rule('list', ()),
     ...     Rule('list', ('list', 'item')))
     >>> print(g)
     'list' = ;
@@ -16,7 +16,7 @@ class Grammar:
     Grammars expose their rules using the standard list interface.
     
     >>> g[0]
-    Rule('list')
+    Rule('list', ())
     >>> len(g)
     2
     >>> for rule in g: print(rule)
@@ -29,7 +29,7 @@ class Grammar:
     all non-terminals and a list of all referenced symbols.
     
     >>> g = Grammar(
-    ...     Rule('list'),
+    ...     Rule('list', ()),
     ...     Rule('list', ('list', 'item')),
     ...     Rule('root', ('list',)))
     >>> [g.is_terminal(symbol) for symbol in ('list', 'root', 'item', 'unreferenced')]
