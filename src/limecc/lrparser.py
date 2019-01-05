@@ -236,7 +236,7 @@ class ParsingError(RuntimeError):
         RuntimeError.__init__(self, message)
         self.pos = pos
     def format(self, severity='error'):
-        return '%s: %s: %s' % (self.pos, severity, self.message)
+        return '%s: %s: %s' % (self.pos, severity, self.args[0])
     def __str__(self):
         return self.format()
 
@@ -355,7 +355,7 @@ class _LrParser(object):
                 part = parts.setdefault(sym, [])
                 part.append(_Item(item.rule, item.index + 1, item.lookahead))
 
-            for symbol, kernel in parts.iteritems():
+            for symbol, kernel in parts.items():
                 kernel = frozenset(kernel)
                 oldstate_index = state_kernel_map.get(kernel)
                 if oldstate_index is not None:
@@ -422,7 +422,7 @@ class _LrParser(object):
         if self.k == 0:
             def get_shift_token():
                 try:
-                    return it.next()
+                    return next(it.next)
                 except StopIteration:
                     return None
             def update_lookahead():
@@ -435,7 +435,7 @@ class _LrParser(object):
             def update_lookahead():
                 if not lookahead:
                     try:
-                        lookahead.append(it.next())
+                        lookahead.append(next(it))
                     except StopIteration:
                         pass
         else:
@@ -574,10 +574,8 @@ class _Item:
         
         self.final = len(self.rule.right) <= self.index
     
-    def __cmp__(self, other):
-        return cmp(
-            (self.rule, self.index, self.lookahead),
-            (other.rule, other.index, other.lookahead))
+    def __eq__(self, other):
+        return (self.rule, self.index, self.lookahead) == (other.rule, other.index, other.lookahead)
     
     def __hash__(self):
         return hash((self.rule, self.index, self.lookahead))

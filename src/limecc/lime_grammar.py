@@ -133,7 +133,7 @@ class LimeGrammar:
 
     def _grammar_rule(self, g, rule):
         g.rules.append(rule)
-        g.tokens = [lex_rhs for lex_rhs, tok_id in sorted(self._implicit_tokens.iteritems(), key=lambda x: x[1])]
+        g.tokens = [lex_rhs for lex_rhs, tok_id in sorted(self._implicit_tokens.items(), key=lambda x: x[1])]
         return g
 
     def _stmt_type(self, lhs, _cc, type):

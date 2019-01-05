@@ -129,7 +129,7 @@ SNIPPET ::= <an arbitrary text enclosed in braces>.
                     try:
                         test_parser.parse(partial_lex(text))
                     except ParsingError as e:
-                        print(ParsingError('test failed: %s' % e.message, pos).format())
+                        print(ParsingError('test failed: %s' % e, pos).format())
 
             if options.print_dfas:
                 for token_id, fa in enumerate(p.lex_dfas):
@@ -170,18 +170,14 @@ SNIPPET ::= <an arbitrary text enclosed in braces>.
                     fout.write(lime_cpp(p))
 
         except ParsingError as e:
-            print(str(e))
+            print(e)
             return 1
         except LexerConflictError as e:
-            print(e.message)
+            print(e)
             return 1
         except ActionConflictError as e:
-            print(e.message)
+            print(e)
             e.print_trace()
-            return 1
-        except Exception as e:
-            import traceback
-            traceback.print_exc(sys.stderr)
             return 1
 
 if __name__ == '__main__':
