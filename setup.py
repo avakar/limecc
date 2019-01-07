@@ -14,7 +14,7 @@ setup(name='limecc',
     license = "Boost",
     entry_points = {
         'console_scripts': [
-            'limecc = limecc.limecc:_main',
+            'limecc = limecc.__main__:_main',
             ],
         },
     test_suite = "limecc.tests",
