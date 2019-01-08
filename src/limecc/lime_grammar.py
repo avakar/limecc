@@ -21,6 +21,7 @@ from .lrparser import make_lrparser, ParsingError
 import types, sys
 from .fa import union_fa, minimize_enfa
 from .regex_parser import parse_regex, make_enfa_from_regex, make_dfa_from_literal
+from . import peg_expr as peg
 
 class LimeSpecParsingError(ParsingError):
     """Raised if there is a semantic error in the lime specification."""
@@ -102,6 +103,7 @@ class LimeGrammar:
     def _grammar_empty(self):
         g = _ParsedGrammar()
         g.rules = []
+        g.peg_rules = []
         g.extra_symbols = []
         g.context_lexer = False
         g.lex_rules = []
@@ -134,6 +136,10 @@ class LimeGrammar:
     def _grammar_rule(self, g, rule):
         g.rules.append(rule)
         g.tokens = [lex_rhs for lex_rhs, tok_id in sorted(self._implicit_tokens.items(), key=lambda x: x[1])]
+        return g
+
+    def _grammar_peg_rule(self, g, rule):
+        g.peg_rules.append(rule)
         return g
 
     def _stmt_type(self, lhs, _cc, type):
@@ -234,6 +240,19 @@ class LimeGrammar:
     def _grammar_kw_root_id(self, g, _kw, rule, _dot=None):
         return self._grammar_set_root(g, rule.value, _kw.pos)
 
+    def _id(self, x):
+        return x
+
+    def _peg_make_add_choice(self, expr, _, seq):
+        if isinstance(expr, peg.Choice):
+            return peg.Choice(exprs=expr.exprs + (seq,))
+        return peg.Choice(exprs=(expr, seq))
+
+    def _peg_make_append_seq(self, expr, pred):
+        if isinstance(expr, peg.Seq):
+            return peg.Seq(exprs=expr.exprs + (pred,))
+        return peg.Seq(exprs=(expr, pred))
+
     grammar = Grammar(
         Rule('root', ('grammar',), action=_make_grammar),
         Rule('grammar', (), action=_grammar_empty),
@@ -261,6 +280,33 @@ class LimeGrammar:
         Rule('named_item', ('QL', '(', 'ID', ')'), action=_named_item_lit_with_name),
         Rule('named_item', ('SNIPPET',), action=_named_item_snippet),
         Rule('named_item', ('SNIPPET', '(', 'ID', ')'), action=_named_item_snippet_with_name),
+
+        Rule('rule_stmt', ('ID', '<-', 'peg_expr', ';'), action=lambda self, name, _1, expr, _2: peg.Rule(sym=name.value, expr=expr)),
+
+        Rule('peg_expr', (), action=lambda self: peg.Seq(exprs=())),
+        Rule('peg_expr', ('peg_seq',), action=_id),
+        Rule('peg_expr', ('peg_expr', '/', 'peg_seq'), action=_peg_make_add_choice),
+
+        Rule('peg_seq', ('peg_pred',), action=_id),
+        Rule('peg_seq', ('peg_seq', 'peg_pred'), action=_peg_make_append_seq),
+
+        Rule('peg_pred', ('peg_atom',), action=_id),
+        Rule('peg_pred', ('&', 'peg_atom'), action=lambda self, _, expr: peg.Lookahead(expr=expr)),
+        Rule('peg_pred', ('!', 'peg_atom'), action=lambda self, _, expr: peg.Notahead(expr=expr)),
+
+        Rule('peg_atom', ('(', 'peg_expr', ')'), action=lambda _1, expr, _2: expr),
+        Rule('peg_atom', ('peg_atom', '?'), action=lambda self, expr, _: peg.Opt(expr=expr)),
+        Rule('peg_atom', ('peg_atom', '*'), action=lambda self, expr, _: peg.Star(expr=expr)),
+        Rule('peg_atom', ('peg_atom', '+'), action=lambda self, expr, _: peg.Plus(expr=expr)),
+        Rule('peg_atom', ('peg_literal',), action=_id),
+
+        Rule('peg_literal', ('ID',), action=lambda self, sym: peg.Symbol(name=sym.value, param=None)),
+        Rule('peg_literal', ('QL',), action=lambda self, lit: peg.Literal(value=lit.value, param=None)),
+        Rule('peg_literal', ('SNIPPET',), action=lambda self, lit: peg.Snippet(value=lit.value, param=None)),
+        Rule('peg_literal', ('ID', ':', 'ID',), action=lambda self, param, _, sym: peg.Symbol(name=sym.value, param=param.value)),
+        Rule('peg_literal', ('ID', ':', 'QL',), action=lambda self, param, _, lit: peg.Literal(value=lit.value, param=param.value)),
+        Rule('peg_literal', ('ID', ':', 'SNIPPET',), action=lambda self, param, _, lit: peg.Snippet(value=lit.value, param=param.value)),
+
         Rule('test_list', (), action=_test_list_new),
         Rule('test_list', ('test_list', 'ID'), action=_test_list_id),
         Rule('test_list', ('test_list', 'SNIPPET'), action=_test_list_lit),
@@ -359,7 +405,7 @@ def _lime_lex_one(input, pos):
         return (input[0], 0, 1), 1
     else:
         i = 0
-        while i < len(input) and input[i] in ':=.':
+        while i < len(input) and input[i] in '<-:=.;':
             i += 1
         if i == 0:
             raise LimeSpecParsingError('unexpected character: %r' % ch, pos)
