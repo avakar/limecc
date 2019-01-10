@@ -1,6 +1,5 @@
 The limecc parser generator
 ===========================
-[![Build Status](https://travis-ci.org/avakar/limecc.svg?branch=master)](https://travis-ci.org/avakar/limecc)
 
 limecc is a lexer and parser generator similar to other tools like yacc, bison and especially [lemon][1] from which limecc sources inspiration. Grammars are written in a language called Lime, which describes lexical tokens, grammar productions, and sematic actions. The generator produces C++ code for the corresponding lexer and parser.
 
