@@ -17,7 +17,7 @@ class Lit:
         else:
             return 'Lit(%r)' % (sorted(self.charset),)
 
-    def __nonzero__(self):
+    def __bool__(self):
         return bool(self.charset) or self.inv
 
     def __sub__(self, other):
@@ -89,13 +89,13 @@ _escape_map = {
     }
 
 _regex_grammar = Grammar(
-    Rule('alt', ('cat',)),
+    Rule('alt', ('cat',), lambda self, x: x),
     Rule('alt', ('alt', '|', 'cat'), lambda self, lhs, _pipe, rhs: Alt(lhs, rhs) if not isinstance(lhs, Alt) else Alt(*(lhs.terms + (rhs,)))),
 
     Rule('cat', (), lambda self: None),
     Rule('cat', ('cat', 'rep'), lambda self, cat, rep: rep if cat is None else Cat(*(cat.terms + (rep,))) if isinstance(cat, Cat) else Cat(cat, rep)),
 
-    Rule('rep', ('atom',)),
+    Rule('rep', ('atom',), lambda self, x: x),
     Rule('rep', ('atom', '*'), lambda self, atom, _star: Rep(atom)),
     Rule('rep', ('atom', '+'), lambda self, atom, _plus: Cat(atom, Rep(atom))),
     Rule('rep', ('atom', '?'), lambda self, atom, _q: Alt(None, atom)),
@@ -111,7 +111,7 @@ _regex_grammar = Grammar(
     Rule('range', ('range', 'range_elem'), lambda self, range, elem: range + elem),
 
     Rule('range_elem', ('c',), lambda self, ch: ch),
-    Rule('range_elem', ('c', '-', 'c'), lambda self, lhs, _m, rhs: ''.join((chr(c) for c in xrange(ord(lhs), ord(rhs)+1)))),
+    Rule('range_elem', ('c', '-', 'c'), lambda self, lhs, _m, rhs: ''.join((chr(c) for c in range(ord(lhs), ord(rhs)+1)))),
     Rule('range_elem', ('esc',), lambda self, ch: _escape_map.get(ch, ch)),
     )
 

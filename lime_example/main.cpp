@@ -1,3 +1,6 @@
+#include <stdexcept>
+#include <string>
+
 #include "calc.hpp"
 #include <iostream>
 #include <string>

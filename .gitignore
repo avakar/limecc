@@ -4,7 +4,9 @@ Release
 **.user
 **.suo
 **.sdf
-dist
+build/
+_build/
+dist/
 **.egg-info
 .pytest_cache/
 __pycache__/

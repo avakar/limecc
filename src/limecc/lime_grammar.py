@@ -77,7 +77,7 @@ class LexLiteral:
 
 def _make_rule(lhs, lhs_name, rhs_list, rule_action):
     r = Rule(lhs, tuple((rhs for rhs, rhs_name in rhs_list)))
-    if rule_action != ():
+    if rule_action:
         r.lime_action = rule_action.value
         r.lime_action_pos = rule_action.pos
     else:
@@ -266,8 +266,8 @@ class LimeGrammar:
         Rule('grammar', ('grammar', 'kw_root', 'ID', '.'), action=_grammar_kw_root_id),
         Rule('grammar', ('grammar', 'type_stmt'), action=_grammar_type),
         Rule('grammar', ('grammar', 'rule_stmt'), action=_grammar_rule),
-        Rule('rule_action', ()),
-        Rule('rule_action', ('SNIPPET',)),
+        Rule('rule_action', (), action=lambda self: None),
+        Rule('rule_action', ('SNIPPET',), action=_id),
         Rule('type_stmt', ('ID', '::', 'SNIPPET'), action=_stmt_type),
         Rule('type_stmt', ('ID', '::', 'ID'), action=_stmt_type_void),
         Rule('rule_stmt', ('ID', '::=', 'rhs_list', '.', 'rule_action'), action=_stmt_rule),

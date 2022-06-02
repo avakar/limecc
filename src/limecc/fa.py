@@ -123,7 +123,6 @@ yield automata that do not share states with the input automata.
 """
 
 import sys
-import six
 
 def _reachable_states(initial_set):
     q = list(initial_set)
@@ -262,10 +261,9 @@ def convert_enfa_to_dfa(enfa, accept_combine=min):
                     else:
                         edges[target] &= label
         while edges:
-            it = six.iteritems(edges)
-            target, s = next(it)
-            targets = set([target])
-            current_set = s
+            it = iter(edges.items())
+            target, current_set = next(it)
+            targets = { target }
             for target, next_set in it:
                 s = current_set & next_set
                 if s:
@@ -277,7 +275,7 @@ def convert_enfa_to_dfa(enfa, accept_combine=min):
                 processed.add(dfa_target)
                 q.append(dfa_target)
 
-            for target in list(six.iterkeys(edges)):
+            for target in list(edges):
                 reduced = edges[target] - current_set
                 if not reduced:
                     del edges[target]
@@ -317,13 +315,13 @@ def minimize_enfa(fa, accept_combine=min):
             accept_label_map.setdefault(state.accept, set()).add(state)
 
     partition = set([frozenset(no_accept)])
-    for states in six.itervalues(accept_label_map):
+    for states in accept_label_map.values():
         partition.add(frozenset(states))
 
     def _get_maximum_charsets(item_charset_map):
         item_charset_map = dict(item_charset_map)
         while item_charset_map:
-            it = six.iteritems(item_charset_map)
+            it = iter(item_charset_map.items())
             item, charset = next(it)
             items = set([item])
             current_charset = charset
@@ -335,7 +333,7 @@ def minimize_enfa(fa, accept_combine=min):
 
             yield items, current_charset
 
-            for item in list(six.iterkeys(item_charset_map)):
+            for item in list(item_charset_map):
                 reduced = item_charset_map[item] - current_charset
                 if not reduced:
                     del item_charset_map[item]
@@ -368,14 +366,14 @@ def minimize_enfa(fa, accept_combine=min):
                 target_map = {}
                 for source, target in edges:
                     target_map.setdefault(partition_map[target], set()).add(source)
-                for part, source_set in six.iteritems(target_map):
-                    for source, siblings in six.iteritems(sibling_map):
+                for part, source_set in target_map.items():
+                    for source, siblings in sibling_map.items():
                         if source in source_set:
                             siblings &= source_set
                         else:
                             siblings -= source_set
 
-            for sibling_set in six.itervalues(sibling_map):
+            for sibling_set in sibling_map.values():
                 new_partition.add(frozenset(sibling_set))
 
         if partition == new_partition:
@@ -390,7 +388,7 @@ def minimize_enfa(fa, accept_combine=min):
         new_state = State(accept=next(iter(state_class)).accept)
         new_state_map[state_class] = new_state
 
-    for state_class, source in six.iteritems(new_state_map):
+    for state_class, source in new_state_map.items():
         target_labels = {}
         for state in state_class:
             for target, label in state.outedges:
@@ -405,7 +403,7 @@ def minimize_enfa(fa, accept_combine=min):
             else:
                 target_map[new_state_map[target]] |= charset
 
-        for target, charset in six.iteritems(target_map):
+        for target, charset in target_map.items():
             source.connect_to(target, charset)
 
     return Automaton(new_state_map[partition_map[next(iter(fa.initial))]])

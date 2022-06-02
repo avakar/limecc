@@ -456,7 +456,7 @@ def _make_lexer(p, class_name):
             'name': '_%d' % i,
             'comment': str(p.grammar.tokens[i]),
             'store': isinstance(p.grammar.tokens[i], LexRegex)
-            } for i in xrange(len(p.grammar.tokens))]
+            } for i in range(len(p.grammar.tokens))]
         }
 
 def lime_cpp(p):
@@ -468,7 +468,7 @@ def lime_cpp(p):
     params.update(_make_lexer(p, 'parser'))
 
     g = p.grammar
-    sym_annot = dict(g.sym_annot.iteritems())
+    sym_annot = dict(g.sym_annot)
     for sym in g.symbols():
         if sym not in sym_annot:
             if g.is_terminal(sym) and g.token_type is not None:
@@ -483,14 +483,14 @@ def lime_cpp(p):
                 sym_annot[sym] = sym_annot[sym].strip()
 
     syms_by_type = {}
-    for sym, annot in sym_annot.iteritems():
+    for sym, annot in sym_annot.items():
         syms_by_type.setdefault(annot, []).append(sym)
 
-    annot_indexes = dict([(annot, i) for i, annot in enumerate(syms_by_type.iterkeys())])
+    annot_indexes = dict([(annot, i) for i, annot in enumerate(syms_by_type)])
     nonterm_indexes = dict([(nonterm, i) for i, nonterm in enumerate(g.nonterms())])
     term_indexes = dict([(term, i) for i, term in enumerate(g.terminals())])
 
-    params['ast_stacks'] = [{'type': annot, 'i': i} for annot, i in annot_indexes.iteritems() if annot is not None]
+    params['ast_stacks'] = [{'type': annot, 'i': i} for annot, i in annot_indexes.items() if annot is not None]
     params['lex_stack'] = annot_indexes['std::string']
 
     assert len(p.root) == 1
@@ -557,7 +557,7 @@ def lime_cpp(p):
                     'rhs': idx_counts[inplace_swap_stack] - inplace_swap
                     }
             erase = []
-            for idx, count in idx_counts.iteritems():
+            for idx, count in idx_counts.items():
                 if modify_inplace and idx == inplace_swap_stack:
                     count -= 1
                 if count != 0:
@@ -616,7 +616,7 @@ def lime_cpp(p):
 
     action_table = [None]*(len(term_indexes)+1)
     action_table[0] = _get_action_row(())
-    for term, i in term_indexes.iteritems():
+    for term, i in term_indexes.items():
         action_table[i+1] = _get_action_row((term,))
     params['action_table'] = action_table
 
